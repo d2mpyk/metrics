@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login</title>
+    <link rel="stylesheet" href="https://www.w3schools.com/w3css/5/w3.css">
+</head>
+
+<body class="w3-light-grey w3-display-container" style="height:100vh;">
+
+    <div class="w3-display-middle" style="width:100%; max-width:400px;">
+
+        <h2 class="w3-center w3-text-blue"><strong>Iniciar Sesión</strong></h2>
+        <div class="w3-card-4 w3-white w3-round-large w3-padding-large">
+            <img class="w3-image w3-round-large w3-margin-top" src="{{ url_for('static', path='images/bg-login.jpg') }}"
+                alt="">
+
+            <form id="loginForm">
+                <p>
+                    <!-- <label class="w3-text-grey">Correo electrónico</label> -->
+                    <input id="email" class="w3-input w3-border w3-round" type="email" placeholder="Username"
+                        required>
+                </p>
+
+                <p>
+                    <!-- <label class="w3-text-grey">Contraseña</label> -->
+                    <input id="password" class="w3-input w3-border w3-round" type="password" placeholder="Password"
+                        required>
+                </p>
+
+                <p>
+                    <button
+                        class="w3-button w3-block w3-white w3-border-blue w3-text-blue w3-round-large w3-hover-blue w3-hover-border-blue w3-hover-text-white"
+                        type="submit"><strong>Ingresar</strong></button>
+                </p>
+            </form>
+
+            <div class="w3-center w3-small w3-margin-top">
+                <a href="#" class="w3-text-blue">¿Olvidaste tu contraseña?</a>
+            </div>
+        </div>
+    </div>
+    <script src="{{ url_for('static', path='js/login.js') }}"></script>
+</body>
+
+</html>

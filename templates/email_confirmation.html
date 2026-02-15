@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+</head>
+
+<body>
+    <section style="max-width: 600px; margin: auto; padding: 20px;">
+        <h1><strong>Hola {{ user }}</strong></h1>
+
+        <p>Puedes confirmar tu correo, presionando el siguiente botón:</p>
+
+        <button>
+            <a href="{{ url }}" style="text-decoration: none; display: inline-block;">
+                Confirmar Cuenta
+            </a>
+        </button>
+        <br>
+        <p><small>Si no solicitaste esto, ignora este correo.</small></p>
+    </section>
+</body>
+
+</html>
