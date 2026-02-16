@@ -4,7 +4,7 @@ from fastapi.templating import Jinja2Templates
 from typing import Annotated
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
-import jwt, smtplib
+import jwt, smtplib, logging
 
 from pwdlib import PasswordHash
 from argon2.exceptions import VerifyMismatchError
@@ -29,6 +29,15 @@ settings = get_settings()
 
 # Configuración de templates
 templates = Jinja2Templates(directory="templates")
+
+# Configuración de Logging para Emails
+email_logger = logging.getLogger("email_sender")
+email_logger.setLevel(logging.INFO)
+# Evitar duplicar handlers si se recarga el módulo
+if not email_logger.handlers:
+    fh = logging.FileHandler("email_logs.log", encoding="utf-8")
+    fh.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
+    email_logger.addHandler(fh)
 
 
 # ----------------------------------------------------------------------
@@ -198,39 +207,49 @@ def confirm_verification_token(token: str, expiration=3600):
 
 
 # ----------------------------------------------------------------------
-# Envia el email de confirmación
-def send_email_confirmation(context: dict):
-    """Envia un correo de confirmación de email"""
-    email_destinatario = context.get("email")
-    DOMINIO = settings.DOMINIO.get_secret_value()
+# (Privada) Función genérica para enviar correos
+def _send_email(recipient_email: str, subject: str, html_content: str):
+    """Función base para enviar correos HTML usando SMTP SSL."""
     EMAIL_SERVER = settings.EMAIL_SERVER.get_secret_value()
     EMAIL_PORT = int(settings.EMAIL_PORT.get_secret_value())
     EMAIL_USER = settings.EMAIL_USER.get_secret_value()
     EMAIL_PASSWD = settings.EMAIL_PASSWD.get_secret_value()
 
-    # 1. Obtener y Renderizar la Plantilla
-    # Buscamos el archivo y le pasamos el diccionario de contexto completo
-    template = templates.get_template("email_confirmation.html")
-    html_content = template.render(context)
-
-    # 2. Crear el objeto Mensaje (MIMEMultipart es mejor para evitar errores de formato)
     message = MIMEMultipart("alternative")
-    message["Subject"] = f"{DOMINIO} - Confirme su correo"
+    message["Subject"] = subject
     message["From"] = EMAIL_USER
-    message["To"] = email_destinatario
+    message["To"] = recipient_email
 
-    # 3. Adjuntar el contenido HTML renderizado
     part_html = MIMEText(html_content, "html")
     message.attach(part_html)
 
-    # 4. Enviar
     try:
         with smtplib.SMTP_SSL(EMAIL_SERVER, EMAIL_PORT) as server:
             server.login(EMAIL_USER, EMAIL_PASSWD)
-            server.sendmail(EMAIL_USER, email_destinatario, message.as_string())
-        print(f"¡Mensaje enviado a {email_destinatario}!")
+            server.sendmail(EMAIL_USER, recipient_email, message.as_string())
+        email_logger.info(
+            f"EXITO: Email enviado a {recipient_email} | Asunto: {subject}"
+        )
     except Exception as e:
-        print(f"Error enviando email: {e}")
+        email_logger.error(f"ERROR: Fallo al enviar a {recipient_email} | {e}")
+
+
+# ----------------------------------------------------------------------
+# Envia el email de confirmación
+def send_email_confirmation(context: dict):
+    """Envia un correo de confirmación de email"""
+    email_destinatario = context.get("email")
+    DOMINIO = settings.DOMINIO.get_secret_value()
+
+    # 1. Obtener y Renderizar la Plantilla
+    template = templates.get_template("email_confirmation.html")
+    html_content = template.render(context)
+    subject = f"{DOMINIO} - Confirme su correo"
+
+    # 2. Enviar usando la función base
+    _send_email(
+        recipient_email=email_destinatario, subject=subject, html_content=html_content
+    )
 
 
 # ----------------------------------------------------------------------
@@ -260,37 +279,16 @@ def verify_reset_password_token(token: str, expiration=3600):
 # ----------------------------------------------------------------------
 # Envia el email de reseteo de password
 def send_reset_password_email(context: dict):
-    """Envia un correo con el link para resetear la contraseña"""
-    # Reutilizamos la lógica de envío, idealmente deberías tener un template
-    # llamado 'password_reset_email.html'
-    try:
-        # Intentamos usar un template específico si existe
-        template = templates.get_template("password_reset_email.html")
-        html_content = template.render(context)
-        
-        # Preparamos el contexto para reutilizar la función de envío o lógica similar
-        # Por simplicidad, aquí inyectamos el contenido en la función existente o duplicamos lógica.
-        # Para mantener el código limpio, duplicaremos la parte de envío con el asunto correcto:
-        
-        email_destinatario = context.get("email")
-        DOMINIO = settings.DOMINIO.get_secret_value()
-        EMAIL_SERVER = settings.EMAIL_SERVER.get_secret_value()
-        EMAIL_PORT = int(settings.EMAIL_PORT.get_secret_value())
-        EMAIL_USER = settings.EMAIL_USER.get_secret_value()
-        EMAIL_PASSWD = settings.EMAIL_PASSWD.get_secret_value()
+    """Envia un correo con el link para resetear la contraseña."""
+    email_destinatario = context.get("email")
+    DOMINIO = settings.DOMINIO.get_secret_value()
 
-        message = MIMEMultipart("alternative")
-        message["Subject"] = f"{DOMINIO} - Restablecer Contraseña"
-        message["From"] = EMAIL_USER
-        message["To"] = email_destinatario
+    # 1. Obtener y Renderizar la Plantilla
+    template = templates.get_template("password_reset_email.html")
+    html_content = template.render(context)
+    subject = f"{DOMINIO} - Restablecer Contraseña"
 
-        part_html = MIMEText(html_content, "html")
-        message.attach(part_html)
-
-        with smtplib.SMTP_SSL(EMAIL_SERVER, EMAIL_PORT) as server:
-            server.login(EMAIL_USER, EMAIL_PASSWD)
-            server.sendmail(EMAIL_USER, email_destinatario, message.as_string())
-        print(f"¡Email de reseteo enviado a {email_destinatario}!")
-        
-    except Exception as e:
-        print(f"Error enviando email de reseteo: {e}")
+    # 2. Enviar usando la función base
+    _send_email(
+        recipient_email=email_destinatario, subject=subject, html_content=html_content
+    )

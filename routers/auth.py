@@ -84,6 +84,7 @@ def login_for_access_token(
 @router.post(
     "/logout",
     name="logout",
+    include_in_schema=False,
 )
 def logout(response: Response):
     redirect = RedirectResponse(url="/", status_code=303)

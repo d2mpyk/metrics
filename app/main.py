@@ -1,13 +1,16 @@
-"""Esta es una plantilla de FastAPI con model User, Auth y DB """
+"""Esta es una plantilla de FastAPI con model User, Auth y DB"""
+
 from fastapi import FastAPI, Request, status
+
 # Para enviar respuestas HTML
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import sys
+
 # Imports Locales
 from utils.database import Base, engine
-from routers import auth, dashboard, users
+from routers import auth, dashboard, users, dev
 from utils.init_db import get_init_config, init_approved_users
 from utils.middleware import HTMLAuthMiddleware
 
@@ -39,6 +42,7 @@ templates = Jinja2Templates(directory="templates")
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["Auth"])
 app.include_router(dashboard.router, prefix="/api/v1/dashboard", tags=["Dashboard"])
 app.include_router(users.router, prefix="/api/v1/users", tags=["Users"])
+app.include_router(dev.router, prefix="/dev", tags=["Development"])
 
 
 # Muestra la pagina principal del sitio
@@ -59,18 +63,36 @@ def inicio(request: Request):
 
 
 # -----------------------------------------------
-# Muestra la pagina principal del sitio
+# Muestra la pagina de recuperar contraseña
 @app.get(
-    "/forgot_password",
-    name="forgot_password",
+    "/forgot-password",
+    name="forgot-password",
     response_class=HTMLResponse,
     status_code=status.HTTP_200_OK,
     include_in_schema=False,
 )
-def inicio(request: Request):
+def forgot_password_view(request: Request):
     """Renderiza la página recuperar contraseña"""
     return templates.TemplateResponse(
         request=request,
-        name="login/forgot_password.html",
+        name="login/forgot-password.html",
         context={"title": "Recupera tu contraseña"},
+    )
+
+
+# -----------------------------------------------
+# Muestra la pagina de resetear contraseña
+@app.get(
+    "/reset-password",
+    name="reset-password",
+    response_class=HTMLResponse,
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False,
+)
+def reset_password_view(request: Request):
+    """Renderiza la página de resetear contraseña"""
+    return templates.TemplateResponse(
+        request=request,
+        name="login/reset-password.html",
+        context={"title": "Restablecer contraseña"},
     )

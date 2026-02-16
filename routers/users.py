@@ -99,17 +99,19 @@ def request_password_reset(
     if user and user.is_active:
         # 1. Generar Token
         token = generate_reset_password_token(user.email)
-        
+
         # 2. Crear Link (Ajustar según la ruta de tu Frontend o API)
         DOMINIO = settings.DOMINIO.get_secret_value()
         # Ejemplo: http://midominio.com/reset-password?token=...
-        reset_url = f"http://{DOMINIO}/api/v1/users/reset-password?token={token}"        
+        reset_url = f"http://{DOMINIO}/api/v1/users/reset-password?token={token}"
         context = {"username": user.username, "email": user.email, "url": reset_url}
-        
+
         # 3. Enviar Email en background
         background_tasks.add_task(send_reset_password_email, context)
 
-    return {"message": "Si el correo existe, se ha enviado un enlace para restablecer la contraseña."}
+    return {
+        "message": "Si el correo existe, se ha enviado un enlace para restablecer la contraseña."
+    }
 
 
 # ----------------------------------------------------------------------

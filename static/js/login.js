@@ -1,5 +1,6 @@
 document.addEventListener("DOMContentLoaded", function () {
 
+    // JS LOGIN
     const formLogin = document.getElementById("loginForm");
 
     formLogin.addEventListener("submit", async function (e) {
@@ -48,6 +49,7 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     });
 
+    // JS RECOVERY
     const formRecovery = document.getElementById("forgotPasswordForm");
 
     formRecovery.addEventListener("submit", async function (e) {
@@ -86,5 +88,63 @@ document.addEventListener("DOMContentLoaded", function () {
             submitBtn.innerHTML = originalText;
         }
     });
+
+    // JS RESET
+    const formReset = document.getElementById("resetPasswordForm");
+    
+    // Obtener token de la URL (query param ?token=...)
+    const urlParams = new URLSearchParams(window.location.search);
+    const token = urlParams.get('token');
+
+    if (!token) {
+        alert("Token no encontrado o enlace inválido. Por favor solicita un nuevo enlace.");
+        // Opcional: Deshabilitar el formulario
+        const inputs = formReset.querySelectorAll("input, button");
+        inputs.forEach(input => input.disabled = true);
+        return;
+    }
+
+    formReset.addEventListener("submit", async function (e) {
+        e.preventDefault();
+        const newPassword = document.getElementById("new_password").value;
+        const confirmPassword = document.getElementById("confirm_password").value;
+        const submitBtn = formReset.querySelector("button");
+
+        if (newPassword !== confirmPassword) {
+            alert("Las contraseñas no coinciden.");
+            return;
+        }
+
+        // Feedback visual
+        const originalText = submitBtn.innerHTML;
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = "<strong>Enviando...</strong>";
+
+        try {
+            const response = await fetch(`/api/v1/users/reset-password/${token}`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({ new_password: newPassword })
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                alert(data.message);
+                window.location.href = "/"; // Redirigir al login
+            } else {
+                alert("Error: " + (data.detail || "Ocurrió un error inesperado"));
+            }
+
+        } catch (error) {
+            alert("Error de conexión: " + error.message);
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = originalText;
+        }
+    });
+
 
 });
