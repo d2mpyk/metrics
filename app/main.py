@@ -53,5 +53,24 @@ def inicio(request: Request):
     """Renderiza la página inicial"""
     return templates.TemplateResponse(
         request=request,
-        name="login/base_login.html",
+        name="login/login.html",
+        context={"title": "Iniciar Sesión"},
+    )
+
+
+# -----------------------------------------------
+# Muestra la pagina principal del sitio
+@app.get(
+    "/forgot_password",
+    name="forgot_password",
+    response_class=HTMLResponse,
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False,
+)
+def inicio(request: Request):
+    """Renderiza la página recuperar contraseña"""
+    return templates.TemplateResponse(
+        request=request,
+        name="login/forgot_password.html",
+        context={"title": "Recupera tu contraseña"},
     )

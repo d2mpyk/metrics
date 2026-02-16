@@ -1,8 +1,11 @@
 from models.users import ApprovedUsers, User
 from .database import SessionLocal
 from utils.auth import hash_password
-from utils.config import settings
+from utils.config import get_settings
 import sys
+
+# Obtener las variables de entorno
+settings = get_settings()
 
 def get_init_config():
     """Verifica si el archivo config esta ok"""

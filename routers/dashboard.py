@@ -1,4 +1,3 @@
-from datetime import timedelta
 from typing import Annotated
 
 from fastapi import (
@@ -10,13 +9,10 @@ from fastapi import (
 
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 # Import's Locales
-from models.users import User, ApprovedUsers
 from utils.auth import CurrentUser
-from utils.config import settings
 from utils.database import get_db
 from utils.users import get_total_users
 

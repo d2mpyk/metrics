@@ -21,6 +21,6 @@ class Settings(BaseSettings):
     EMAIL_USER: SecretStr
     EMAIL_PASSWD: SecretStr
 
-
-# Carga de variables de entorno
-settings = Settings()
+# Para cargar las variables de entorno
+def get_settings():
+    return Settings()

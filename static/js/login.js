@@ -1,8 +1,8 @@
 document.addEventListener("DOMContentLoaded", function () {
 
-    const form = document.getElementById("loginForm");
+    const formLogin = document.getElementById("loginForm");
 
-    form.addEventListener("submit", async function (e) {
+    formLogin.addEventListener("submit", async function (e) {
         e.preventDefault();
 
         const username = document.getElementById("email").value;
@@ -45,6 +45,45 @@ document.addEventListener("DOMContentLoaded", function () {
 
         } catch (error) {
             alert("Error en autenticación: " + error.message);
+        }
+    });
+
+    const formRecovery = document.getElementById("forgotPasswordForm");
+
+    formRecovery.addEventListener("submit", async function (e) {
+        e.preventDefault();
+        const email = document.getElementById("email").value;
+        const submitBtn = formRecovery.querySelector("button");
+
+        // Feedback visual: Deshabilitar botón
+        const originalText = submitBtn.innerHTML;
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = "<strong>Enviando...</strong>";
+
+        try {
+            const response = await fetch("/api/v1/users/forgot-password", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({ email: email })
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                alert(data.message);
+                // Opcional: Redirigir al login
+                window.location.href = "/";
+            } else {
+                alert("Error: " + (data.detail || "Ocurrió un error inesperado"));
+            }
+
+        } catch (error) {
+            alert("Error de conexión: " + error.message);
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = originalText;
         }
     });
 

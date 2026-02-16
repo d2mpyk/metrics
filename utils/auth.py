@@ -11,7 +11,7 @@ from argon2.exceptions import VerifyMismatchError
 from fastapi.security import OAuth2PasswordBearer
 from itsdangerous import URLSafeTimedSerializer
 
-from .config import settings
+from .config import get_settings
 from .database import get_db
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -23,6 +23,9 @@ ph = PasswordHash.recommended()
 
 # Esquema de FastAPI para extraer el token del header "Authorization: Bearer ..."
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/v1/auth/token")
+
+# Obtener las variables de entorno
+settings = get_settings()
 
 # Configuración de templates
 templates = Jinja2Templates(directory="templates")
@@ -96,38 +99,44 @@ def verify_access_token(token: str) -> str | None:
 # ----------------------------------------------------------------------
 # Obtiene el usuario actual
 def get_current_user(
-        request: Request,
-        db: Annotated[Session, Depends(get_db)],
-    ) -> User:
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+) -> User:
     """Obtiene el usuario actual autenticado desde la cookie."""
-    
+
     response_exception = HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token Inválido o Expirado.",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Token Inválido o Expirado.",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
     # 1. Obtiene el token desde la cookie
     token = request.cookies.get("access_token")
+
+    # 1.1 Si no hay cookie, intenta obtenerlo del Header Authorization (Estándar OAuth2)
     if not token:
-        raise response_exception
-    
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header.split(" ")[1]
+        else:
+            raise response_exception
+
     # 2. Decodifica el Token
     username = verify_access_token(token)
     if username is None:
         raise response_exception
-    
+
     result = db.execute(select(User).where(User.username == username))
     user = result.scalars().first()
 
     # 3. Validar username en token y existencia del usuario
     if user is None:
         raise response_exception
-        
+
     # 4. Validar que esté activo (Buena práctica en OAuth2)
     if not user.is_active:
         raise response_exception
-    
+
     return user
 
 
@@ -135,13 +144,14 @@ def get_current_user(
 # Alias de Modelo
 CurrentUser = Annotated[User, Depends(get_current_user)]
 
+
 # ----------------------------------------------------------------------
 # Autenticar usuario
 def authenticate_user(
-        username: str, 
-        password: str,
-        db: Annotated[Session, Depends(get_db)],
-    ):
+    username: str,
+    password: str,
+    db: Annotated[Session, Depends(get_db)],
+):
     # Busca user por email
     result = db.execute(
         select(User).where(
@@ -155,6 +165,7 @@ def authenticate_user(
         return None
 
     return user
+
 
 # ----------------------------------------------------------------------
 # Crea el token de confirmación de correo
@@ -220,3 +231,66 @@ def send_email_confirmation(context: dict):
         print(f"¡Mensaje enviado a {email_destinatario}!")
     except Exception as e:
         print(f"Error enviando email: {e}")
+
+
+# ----------------------------------------------------------------------
+# Genera token para resetear password
+def generate_reset_password_token(email: str):
+    """Genera un token seguro para restablecer la contraseña"""
+    serializer = URLSafeTimedSerializer(settings.SECRET_KEY.get_secret_value())
+    return serializer.dumps(email, salt="password-reset-salt")
+
+
+# ----------------------------------------------------------------------
+# Verifica token de resetear password
+def verify_reset_password_token(token: str, expiration=3600):
+    """Verifica el token de restablecimiento de contraseña"""
+    serializer = URLSafeTimedSerializer(settings.SECRET_KEY.get_secret_value())
+    try:
+        email = serializer.loads(
+            token,
+            salt="password-reset-salt",
+            max_age=expiration,
+        )
+    except Exception:
+        return None
+    return email
+
+
+# ----------------------------------------------------------------------
+# Envia el email de reseteo de password
+def send_reset_password_email(context: dict):
+    """Envia un correo con el link para resetear la contraseña"""
+    # Reutilizamos la lógica de envío, idealmente deberías tener un template
+    # llamado 'password_reset_email.html'
+    try:
+        # Intentamos usar un template específico si existe
+        template = templates.get_template("password_reset_email.html")
+        html_content = template.render(context)
+        
+        # Preparamos el contexto para reutilizar la función de envío o lógica similar
+        # Por simplicidad, aquí inyectamos el contenido en la función existente o duplicamos lógica.
+        # Para mantener el código limpio, duplicaremos la parte de envío con el asunto correcto:
+        
+        email_destinatario = context.get("email")
+        DOMINIO = settings.DOMINIO.get_secret_value()
+        EMAIL_SERVER = settings.EMAIL_SERVER.get_secret_value()
+        EMAIL_PORT = int(settings.EMAIL_PORT.get_secret_value())
+        EMAIL_USER = settings.EMAIL_USER.get_secret_value()
+        EMAIL_PASSWD = settings.EMAIL_PASSWD.get_secret_value()
+
+        message = MIMEMultipart("alternative")
+        message["Subject"] = f"{DOMINIO} - Restablecer Contraseña"
+        message["From"] = EMAIL_USER
+        message["To"] = email_destinatario
+
+        part_html = MIMEText(html_content, "html")
+        message.attach(part_html)
+
+        with smtplib.SMTP_SSL(EMAIL_SERVER, EMAIL_PORT) as server:
+            server.login(EMAIL_USER, EMAIL_PASSWD)
+            server.sendmail(EMAIL_USER, email_destinatario, message.as_string())
+        print(f"¡Email de reseteo enviado a {email_destinatario}!")
+        
+    except Exception as e:
+        print(f"Error enviando email de reseteo: {e}")

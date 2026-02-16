@@ -1,6 +1,7 @@
 """Relacionado a los Schemas en la APP"""
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from datetime import datetime
+from typing import Literal
 
 # Clases USER (Base)
 class UserBase(BaseModel):
@@ -33,6 +34,23 @@ class UserUpdate(BaseModel):
     role: str | None = Field(default=None)
     is_active: bool | None = Field(default=None)
     image_file: str | None = Field(default=None, min_length=1, max_length=50)
+
+# Actualización del Rol del usuario
+class UserRoleUpdate(BaseModel):
+    role: Literal["admin", "user"]
+
+# Actualización del Password
+class UserPasswordUpdate(BaseModel):
+    current_password: str
+    new_password: str
+
+# Petición de Email del usuario para recuperar Password
+class PasswordResetRequest(BaseModel):
+    email: str
+
+# Confirmación del nuevo password
+class PasswordResetConfirm(BaseModel):
+    new_password: str
 
 # Respuesta de inicio de sessión de usuario
 class TokenResponse(BaseModel):

@@ -2,25 +2,21 @@ from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.responses import RedirectResponse
 from fastapi.security import OAuth2PasswordRequestForm
-from models.users import User
-from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from typing import Annotated
 
 # Import's Locales
-from schemas.user import TokenResponse, UserResponsePrivate
+from schemas.user import TokenResponse
 from utils.auth import (
     authenticate_user,
-    CurrentUser,
     create_access_token,
-    verify_password,
 )
 from utils.database import get_db
-from utils.config import settings
+from utils.config import get_settings
 
 # Instancia de las rutas
 router = APIRouter()
-
+settings = get_settings()
 
 # ----------------------------------------------------------------------
 # Respuesta de Token
@@ -80,8 +76,7 @@ def login_for_access_token(
         samesite="lax",
     )
 
-    # return TokenResponse(access_token=access_token, token_type="bearer")
-    return {"message": "Login successful"}
+    return TokenResponse(access_token=access_token, token_type="bearer")
 
 
 # ----------------------------------------------------------------------
