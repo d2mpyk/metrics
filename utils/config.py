@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     EMAIL_PORT: SecretStr
     EMAIL_USER: SecretStr
     EMAIL_PASSWD: SecretStr
+    UTC_SERVER: str = "America/Santiago"
+
 
 # Para cargar las variables de entorno
 def get_settings():

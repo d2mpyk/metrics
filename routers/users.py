@@ -24,6 +24,7 @@ from utils.auth import (
     generate_reset_password_token,
     verify_reset_password_token,
     send_reset_password_email,
+    get_current_admin,
 )
 from utils.config import get_settings
 from utils.database import get_db
@@ -139,21 +140,6 @@ def reset_password(
     db.commit()
 
     return {"message": "Contraseña actualizada exitosamente."}
-
-
-# ----------------------------------------------------------------------
-# Verifica si el usuario es admin
-def get_current_admin(
-    current_user: User = Depends(get_current_user),
-):
-    # Verificamos el campo role
-    if current_user.role != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            # 403 = Prohibido (Sabemos quién eres, pero no tienes permiso)
-            detail="Acceso denegado",
-        )
-    return current_user
 
 
 # ----------------------------------------------------------------------

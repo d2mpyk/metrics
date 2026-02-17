@@ -14,11 +14,12 @@ templates = Jinja2Templates(directory="templates")
 def preview_email_confirmation(request: Request):
     """Renderiza una vista previa de la plantilla de confirmación de correo."""
     context = {
-        "request": request,
         "user": "UsuarioDePrueba",
         "url": "http://localhost:8000/api/v1/users/verify/un-token-de-ejemplo-muy-largo",
     }
-    return templates.TemplateResponse("email_confirmation.html", context)
+    return templates.TemplateResponse(
+        request=request, name="email/email_confirmation.html", context=context
+    )
 
 
 @router.get(
@@ -27,9 +28,10 @@ def preview_email_confirmation(request: Request):
 def preview_password_reset(request: Request):
     """Renderiza una vista previa de la plantilla de reseteo de contraseña."""
     context = {
-        "request": request,
         "username": "UsuarioDePrueba",
         "email": "test@example.com",
         "url": "http://localhost:8000/reset-password?token=un-token-de-ejemplo-muy-largo",
     }
-    return templates.TemplateResponse("password_reset_email.html", context)
+    return templates.TemplateResponse(
+        request=request, name="email/password_reset_email.html", context=context
+    )

@@ -16,6 +16,7 @@ from .database import get_db
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from models.users import User
+from models.clients import Client
 
 
 # Password Hasher
@@ -66,7 +67,7 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
         expire = datetime.now(UTC) + expires_delta
     else:
         expire = datetime.now(UTC) + timedelta(
-            minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES.get_secret_value(),
+            minutes=int(settings.ACCESS_TOKEN_EXPIRE_MINUTES.get_secret_value()),
         )
 
     # Authlib requiere claims estándar: 'exp' (expiration) y 'iat' (issued at)
@@ -152,6 +153,62 @@ def get_current_user(
 # ----------------------------------------------------------------------
 # Alias de Modelo
 CurrentUser = Annotated[User, Depends(get_current_user)]
+
+
+# ----------------------------------------------------------------------
+# Verifica si el usuario es admin
+def get_current_admin(current_user: CurrentUser) -> User:
+    """Verifica que el usuario actual tenga rol de administrador."""
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acceso denegado",
+        )
+    return current_user
+
+
+# ----------------------------------------------------------------------
+# Obtiene el cliente (dispositivo) actual
+def get_current_client(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+) -> Client:
+    """Obtiene el dispositivo autenticado desde el Header Authorization."""
+
+    response_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Credenciales de dispositivo inválidas.",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+    # 1. Obtener token del Header
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        raise response_exception
+
+    token = auth_header.split(" ")[1]
+
+    # 2. Decodificar y validar rol
+    try:
+        payload = jwt.decode(
+            token,
+            settings.SECRET_KEY.get_secret_value(),
+            algorithms=[settings.ALGORITHM.get_secret_value()],
+            options={"require": ["sub", "exp", "iat", "role", "client_id"]},
+        )
+    except jwt.InvalidTokenError:
+        raise response_exception
+
+    if payload.get("role") != "device":
+        raise response_exception
+
+    client_id = payload.get("client_id")
+    client = db.execute(select(Client).where(Client.id == client_id)).scalars().first()
+
+    if not client or not client.is_active:
+        raise response_exception
+
+    return client
 
 
 # ----------------------------------------------------------------------
@@ -242,7 +299,7 @@ def send_email_confirmation(context: dict):
     DOMINIO = settings.DOMINIO.get_secret_value()
 
     # 1. Obtener y Renderizar la Plantilla
-    template = templates.get_template("email_confirmation.html")
+    template = templates.get_template("email/email_confirmation.html")
     html_content = template.render(context)
     subject = f"{DOMINIO} - Confirme su correo"
 
@@ -284,7 +341,7 @@ def send_reset_password_email(context: dict):
     DOMINIO = settings.DOMINIO.get_secret_value()
 
     # 1. Obtener y Renderizar la Plantilla
-    template = templates.get_template("password_reset_email.html")
+    template = templates.get_template("email/password_reset_email.html")
     html_content = template.render(context)
     subject = f"{DOMINIO} - Restablecer Contraseña"
 

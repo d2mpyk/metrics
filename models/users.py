@@ -9,6 +9,17 @@ from sqlalchemy.orm import Mapped, mapped_column
 from utils.database import Base
 
 
+class ApprovedUsers(Base):
+    __tablename__ = "approved_users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    email: Mapped[str] = mapped_column(String(120), unique=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+    )
+    
+
 class User(Base):
     __tablename__ = "users"
 
@@ -35,10 +46,4 @@ class User(Base):
         if self.image_file:
             return f"/media/profile_pics/{self.image_file}"
         return "/static/profile_pics/default.jpg"
-    
-class ApprovedUsers(Base):
-    __tablename__ = "approved"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    email: Mapped[str] = mapped_column(String(120), unique=True, nullable=False)
     

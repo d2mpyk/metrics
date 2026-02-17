@@ -13,7 +13,7 @@ def test_email_confirmation_template_render():
     context = {"user": "TestUser", "url": "http://example.com/verify/some_fake_token"}
 
     # 2. Cargar y renderizar el template
-    template = templates.get_template("email_confirmation.html")
+    template = templates.get_template("email/email_confirmation.html")
     html_content = template.render(context)
 
     # 3. Verificar que las variables de contexto están en el HTML renderizado
