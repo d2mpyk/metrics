@@ -1,12 +1,19 @@
 from typing import Annotated
+import shutil
+import os
+import uuid
 
 from fastapi import (
     APIRouter,
+    Request,
     BackgroundTasks,
     Response,
     Depends,
     HTTPException,
     status,
+    File,
+    UploadFile,
+    Form,
 )
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
@@ -38,6 +45,7 @@ from schemas.user import (
     UserResponsePrivate,
     UserUpdate,
 )
+from utils.users import check_email_exists, check_username_exists
 
 
 # Instancia de las rutas
@@ -53,6 +61,72 @@ templates = Jinja2Templates(directory="templates")
 @router.get("/me", response_model=UserResponsePrivate, status_code=status.HTTP_200_OK)
 def get_current_user(current_user: CurrentUser):
     """Obtiene el usuario actual autenticado."""
+    return current_user
+
+
+# ----------------------------------------------------------------------
+# Edita el usuario actual
+@router.patch("/me", response_model=UserResponsePrivate, status_code=status.HTTP_200_OK)
+async def update_current_user_profile(
+    current_user: CurrentUser,
+    db: Annotated[Session, Depends(get_db)],
+    username: Annotated[str | None, Form()] = None,
+    image_file: Annotated[UploadFile | None, File()] = None,
+):
+    """Permite al usuario autenticado actualizar su username y su foto de perfil."""
+
+    if not username and not image_file:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No se proporcionaron datos para actualizar.",
+        )
+
+    if username:
+        # Verificar que el nuevo username no esté en uso por otro usuario
+        if username != current_user.username:
+            check_username_exists(db, username, current_user.id)
+            current_user.username = username
+
+    if image_file:
+        # --- Validación de Archivo ---
+        # 1. Validar tipo de archivo (Content-Type)
+        if image_file.content_type not in ["image/jpeg", "image/png"]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Tipo de archivo no válido. Solo se permiten .jpg y .png",
+            )
+
+        # 2. Validar tamaño del archivo (máx 2MB)
+        # Mover el cursor al final del archivo para obtener el tamaño
+        image_file.file.seek(0, os.SEEK_END)
+        file_size = image_file.file.tell()
+        # Regresar el cursor al inicio para poder leer/copiar el archivo
+        image_file.file.seek(0)
+
+        MAX_FILE_SIZE = 2 * 1024 * 1024  # 2 MB
+        if file_size > MAX_FILE_SIZE:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="El archivo es demasiado grande. El tamaño máximo es de 2MB.",
+            )
+        # --- Fin Validación ---
+        # Definir directorio de subida (asegurar que existe)
+        upload_dir = "media/profile_pics"
+        os.makedirs(upload_dir, exist_ok=True)
+
+        # Generar nombre único para evitar colisiones
+        file_extension = os.path.splitext(image_file.filename)[1]
+        new_filename = f"{uuid.uuid4()}{file_extension}"
+        file_path = os.path.join(upload_dir, new_filename)
+
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(image_file.file, buffer)
+
+        current_user.image_file = new_filename
+
+    db.commit()
+    db.refresh(current_user)
+
     return current_user
 
 
@@ -245,29 +319,9 @@ def create_user(
     user_admin: Annotated[User, Depends(get_current_admin)],
     background_tasks: BackgroundTasks,
 ):
-    result = db.execute(
-        select(User).where(func.lower(User.username) == user.username.lower())
-    )
-    exists_user = result.scalars().first()
-
-    if exists_user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Este usuario ya está registrado",
-        )
-
-    result = db.execute(
-        select(User).where(func.lower(User.email) == user.email.lower())
-    )
-    exists_email = result.scalars().first()
-
-    # Aceptar solo si el email no está registrado
-    if exists_email:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Este email ya está registrado",
-        )
-
+    # Validaciones centralizadas
+    check_username_exists(db, user.username)
+    check_email_exists(db, user.email)
     result = db.execute(
         select(ApprovedUsers).where(
             func.lower(ApprovedUsers.email) == user.email.lower()
@@ -407,7 +461,7 @@ def update_user_partial(
     user_id: int,
     user_data: UserUpdate,
     db: Annotated[Session, Depends(get_db)],
-    current_user: CurrentUser,
+    current_admin: User = Depends(get_current_admin),
 ):
     result = db.execute(select(User).where(User.id == user_id))
     user = result.scalars().first()
@@ -418,37 +472,18 @@ def update_user_partial(
             detail="Este usuario no existe",
         )
 
-    # Si quiere editar el nombre del usuario, primero verificamos el usuario
-    if (
-        user_data.username is not None
-        and user_data.username.lower() != user.username.lower()
-    ):
-        result = db.execute(
-            select(User).where(func.lower(User.username) == user_data.username.lower()),
-        )
-
-        user_exist = result.scalars().first()
-        if user_exist:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Este Usuario ya está registrado.",
-            )
-
-    if user_data.email is not None and user_data.email.lower() != user.email.lower():
-        result = db.execute(
-            select(User).where(func.lower(User.email) == user_data.email.lower()),
-        )
-        email_exist = result.scalars().first()
-        if email_exist:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Este Email ya está registrado.",
-            )
-
-    # Establecemos cada campo editado dinamicamente, dejamos los otros iguales
     update_data = user_data.model_dump(exclude_unset=True)
+
+    # Validar username y email si se están actualizando
+    if "username" in update_data:
+        check_username_exists(db, update_data["username"], user_id)
+
+    if "email" in update_data:
+        check_email_exists(db, update_data["email"], user_id)
+
+    # Establecemos cada campo editado dinamicamente
     for field, value in update_data.items():
-        setattr(user, field, value)
+        setattr(user, field, value.lower() if isinstance(value, str) else value)
 
     db.commit()
     db.refresh(user)

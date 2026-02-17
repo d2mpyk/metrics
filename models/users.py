@@ -1,4 +1,5 @@
 """Relacionado a los Modelos de la DB users"""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -18,7 +19,7 @@ class ApprovedUsers(Base):
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
     )
-    
+
 
 class User(Base):
     __tablename__ = "users"
@@ -35,9 +36,9 @@ class User(Base):
         nullable=True,
         default=None,
     )
-    create_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), 
-        default=lambda:datetime.now(UTC),
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
     )
 
     @property
@@ -46,4 +47,3 @@ class User(Base):
         if self.image_file:
             return f"/media/profile_pics/{self.image_file}"
         return "/static/profile_pics/default.jpg"
-    

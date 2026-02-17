@@ -34,6 +34,7 @@ class Client(Base):
     last_seen: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    description: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),

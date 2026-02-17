@@ -23,7 +23,7 @@ from models.clients import Client
 ph = PasswordHash.recommended()
 
 # Esquema de FastAPI para extraer el token del header "Authorization: Bearer ..."
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/v1/auth/token")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token", auto_error=False)
 
 # Obtener las variables de entorno
 settings = get_settings()
@@ -99,9 +99,11 @@ def verify_access_token(token: str) -> str | None:
             options={"require": ["sub", "exp", "iat"]},
         )
     except (
-        jwt.InvalidTokenError | jwt.ExpiredSignatureError | jwt.InvalidAlgorithmError
+        jwt.InvalidTokenError,
+        jwt.ExpiredSignatureError,
+        jwt.InvalidAlgorithmError,
     ):
-        return credentials_exception
+        raise credentials_exception
     else:
         return payload.get("sub")
 
@@ -111,6 +113,7 @@ def verify_access_token(token: str) -> str | None:
 def get_current_user(
     request: Request,
     db: Annotated[Session, Depends(get_db)],
+    token_: Annotated[str | None, Depends(oauth2_scheme)],
 ) -> User:
     """Obtiene el usuario actual autenticado desde la cookie."""
 
@@ -120,16 +123,14 @@ def get_current_user(
         headers={"WWW-Authenticate": "Bearer"},
     )
 
-    # 1. Obtiene el token desde la cookie
-    token = request.cookies.get("access_token")
+    token = token_
 
-    # 1.1 Si no hay cookie, intenta obtenerlo del Header Authorization (Estándar OAuth2)
+    # 2. Si no hay header (token_ is None), intenta obtenerlo desde la cookie
     if not token:
-        auth_header = request.headers.get("Authorization")
-        if auth_header and auth_header.startswith("Bearer "):
-            token = auth_header.split(" ")[1]
-        else:
-            raise response_exception
+        token = request.cookies.get("access_token")
+
+    if not token:
+        raise response_exception
 
     # 2. Decodifica el Token
     username = verify_access_token(token)
@@ -168,10 +169,16 @@ def get_current_admin(current_user: CurrentUser) -> User:
 
 
 # ----------------------------------------------------------------------
+# Alias de Modelo
+CurrentAdmin = Annotated[User, Depends(get_current_admin)]
+
+
+# ----------------------------------------------------------------------
 # Obtiene el cliente (dispositivo) actual
 def get_current_client(
     request: Request,
     db: Annotated[Session, Depends(get_db)],
+    token_: Annotated[str | None, Depends(oauth2_scheme)],
 ) -> Client:
     """Obtiene el dispositivo autenticado desde el Header Authorization."""
 
@@ -181,12 +188,10 @@ def get_current_client(
         headers={"WWW-Authenticate": "Bearer"},
     )
 
-    # 1. Obtener token del Header
-    auth_header = request.headers.get("Authorization")
-    if not auth_header or not auth_header.startswith("Bearer "):
-        raise response_exception
+    token = token_
 
-    token = auth_header.split(" ")[1]
+    if not token:
+        raise response_exception
 
     # 2. Decodificar y validar rol
     try:
@@ -313,8 +318,12 @@ def send_email_confirmation(context: dict):
 # Genera token para resetear password
 def generate_reset_password_token(email: str):
     """Genera un token seguro para restablecer la contraseña"""
+    # Es buena práctica usar una clave secreta diferente para cada tipo de token
     serializer = URLSafeTimedSerializer(settings.SECRET_KEY.get_secret_value())
-    return serializer.dumps(email, salt="password-reset-salt")
+    # Usamos el salt de la configuración para no tener valores 'secretos' hardcodeados
+    return serializer.dumps(
+        email, salt=settings.SECURITY_PASSWD_SALT.get_secret_value()
+    )
 
 
 # ----------------------------------------------------------------------
@@ -325,7 +334,7 @@ def verify_reset_password_token(token: str, expiration=3600):
     try:
         email = serializer.loads(
             token,
-            salt="password-reset-salt",
+            salt=settings.SECURITY_PASSWD_SALT.get_secret_value(),
             max_age=expiration,
         )
     except Exception:

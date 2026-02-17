@@ -119,7 +119,7 @@ def device_authorization_request(
     if not approved:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Este servidor no está autorizado.",
+            detail=f"Este servidor no está autorizado. IP detectada: {client_ip}",
         )
 
     # 2. Generar Códigos

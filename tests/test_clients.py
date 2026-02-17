@@ -11,7 +11,7 @@ from models.clients import Client, ServerMetric
 from utils.auth import create_access_token
 from utils.crypto import decrypt_payload
 import pytest
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 
 # -----------------------------------------------------------------------------
@@ -81,6 +81,7 @@ def test_receive_metrics_success(client, db_session):
         client_secret_key=secret_key,
         ip_address="127.0.0.1",
         is_active=True,
+        created_at=datetime.now(timezone.utc),
     )
     db_session.add(new_client)
     db_session.commit()
@@ -147,10 +148,10 @@ def test_full_device_flow_integration(client, admin_user):
     resp_approve = client.post("/api/v1/clients/approved", json=approved_payload)
     assert resp_approve.status_code == status.HTTP_201_CREATED
 
-    # Verificar que la respuesta no incluye id ni created_at
+    # Verificar que la respuesta ahora incluye id y created_at, como define ApprovedClientResponse
     data_approve = resp_approve.json()
-    assert "id" not in data_approve
-    assert "created_at" not in data_approve
+    assert "id" in data_approve
+    assert "created_at" in data_approve
     assert data_approve["ip_address"] == "testclient"
 
     # 3. Dispositivo solicita código (Simulamos ser dispositivo limpiando cookies)
@@ -196,3 +197,47 @@ def test_full_device_flow_integration(client, admin_user):
         headers={"Authorization": f"Bearer {access_token}"},
     )
     assert resp_metrics.status_code == status.HTTP_201_CREATED
+
+
+def test_get_approved_clients_as_normal_user_forbidden(auth_client):
+    """Un usuario no-administrador no puede ver la lista de clientes aprobados."""
+    response = auth_client.get("/api/v1/clients/approved")
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+def test_get_clients_as_admin_with_pagination(admin_client, db_session):
+    """Un admin puede obtener una lista paginada de clientes."""
+    # 1. Crear varios clientes de prueba
+    for i in range(5):
+        db_session.add(
+            Client(
+                client_identifier=f"device-{i}",
+                client_secret_key=f"secret-{i}",
+                ip_address=f"192.168.1.{i}",
+                is_active=True,
+                created_at=datetime.now(timezone.utc),
+            )
+        )
+    db_session.commit()
+
+    # 2. Solicitar primera página
+    response1 = admin_client.get("/api/v1/clients?skip=0&limit=3")
+    assert response1.status_code == status.HTTP_200_OK
+    data1 = response1.json()
+    assert data1["total"] == 5
+    assert len(data1["clients"]) == 3
+    assert data1["clients"][0]["client_identifier"] == "device-0"
+
+    # 3. Solicitar segunda página
+    response2 = admin_client.get("/api/v1/clients?skip=3&limit=3")
+    assert response2.status_code == status.HTTP_200_OK
+    data2 = response2.json()
+    assert data2["total"] == 5
+    assert len(data2["clients"]) == 2
+    assert data2["clients"][0]["client_identifier"] == "device-3"
+
+
+def test_get_clients_as_normal_user_is_forbidden(auth_client):
+    """Un usuario normal no puede acceder a la lista de clientes."""
+    response = auth_client.get("/api/v1/clients")
+    assert response.status_code == status.HTTP_403_FORBIDDEN

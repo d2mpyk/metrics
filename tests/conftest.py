@@ -109,3 +109,23 @@ def admin_user(db_session):
     db_session.refresh(user)
 
     return {"email": email, "password": password, "username": username, "id": user.id}
+
+
+@pytest.fixture
+def auth_client(client, test_user):
+    """Cliente autenticado como usuario normal."""
+    client.post(
+        "/api/v1/auth/token",
+        data={"username": test_user["email"], "password": test_user["password"]},
+    )
+    return client
+
+
+@pytest.fixture
+def admin_client(client, admin_user):
+    """Cliente autenticado como administrador."""
+    client.post(
+        "/api/v1/auth/token",
+        data={"username": admin_user["email"], "password": admin_user["password"]},
+    )
+    return client
