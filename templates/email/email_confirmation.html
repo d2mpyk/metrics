@@ -1,36 +1,27 @@
-<!DOCTYPE html>
-<html lang="es">
+{% extends "email/base_email.html" %}
 
-<head>
-    <meta charset="UTF-8">
-    <title>Confirmación de Correo</title>
-</head>
+{% block title %}Confirmación de Correo{% endblock %}
 
-<body style="font-family: Arial, sans-serif; background-color: #f4f4f4; margin: 0; padding: 20px;">
-    <div
-        style="max-width: 600px; margin: 0 auto; background-color: #ffffff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-        <h2 style="color: #333333; text-align: center;">Confirmación de Correo</h2>
+{% block content %}
+<h2 style="color: #333333; text-align: center;">Confirmación de Correo</h2>
 
-        <p style="color: #555555; font-size: 16px; line-height: 1.5;">
-            Hola <strong>{{ user }}</strong>,
-        </p>
+<p style="color: #555555; font-size: 16px; line-height: 1.5;">
+    Hola <strong>{{ user }}</strong>,
+</p>
 
-        <p style="color: #555555; font-size: 16px; line-height: 1.5;">
-            Gracias por registrarte. Para completar el proceso de registro, por favor confirma tu dirección de correo
-            electrónico haciendo clic en el siguiente botón:
-        </p>
+<p style="color: #555555; font-size: 16px; line-height: 1.5;">
+    Gracias por registrarte. Para completar el proceso de registro, por favor confirma tu dirección de correo
+    electrónico haciendo clic en el siguiente botón:
+</p>
 
-        <div style="text-align: center; margin: 30px 0;">
-            <a href="{{ url }}" style="background-color: #007bff; color: #ffffff; 
-                padding: 14px 28px; text-decoration: none; border-radius: 5px; 
-                font-weight: bold; font-size: 16px; 
-                display: inline-block;">Confirmar Cuenta</a>
-        </div>
+<div style="text-align: center; margin: 30px 0;">
+    <a href="{{ url }}" style="background-color: #007bff; color: #ffffff; 
+            padding: 14px 28px; text-decoration: none; border-radius: 5px; 
+            font-weight: bold; font-size: 16px; 
+            display: inline-block;">Confirmar Cuenta</a>
+</div>
 
-        <p style="color: #999999; font-size: 14px; text-align: center; margin-top: 30px;">
-            Si no solicitaste esto, puedes ignorar este correo.
-        </p>
-    </div>
-</body>
-
-</html>
+<p style="color: #999999; font-size: 14px; text-align: center; margin-top: 30px;">
+    Si no solicitaste esto, puedes ignorar este correo.
+</p>
+{% endblock %}

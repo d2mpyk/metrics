@@ -160,7 +160,7 @@ def device_access_token(
 ):
     if grant_type != "urn:ietf:params:oauth:grant-type:device_code":
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, 
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail="unsupported_grant_type",
         )
 
@@ -173,19 +173,19 @@ def device_access_token(
 
     if not code_record:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, 
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail="invalid_grant",
         )
 
     if datetime.now(UTC) > code_record.expires_at.replace(tzinfo=UTC):
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, 
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail="expired_token",
         )
 
     if not code_record.is_verified:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, 
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail="authorization_pending",
         )
 
@@ -198,13 +198,13 @@ def device_access_token(
 
     if not client:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Client not found",
         )
 
     # Generar Token JWT para el dispositivo
     access_token_expires = timedelta(
-        minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES.get_secret_value()
+        minutes=int(settings.ACCESS_TOKEN_EXPIRE_MINUTES.get_secret_value())
     )
     access_token = create_access_token(
         data={
@@ -261,7 +261,7 @@ def device_activate_submit(
 
     if not code_record:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, 
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail="Código inválido",
         )
 

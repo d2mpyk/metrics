@@ -36,7 +36,7 @@ def get_approved_client(
     db: Annotated[Session, Depends(get_db)],
     admin: Annotated[User, Depends(get_current_admin)],
 ):
-    result = db.execute(select(ApprovedClientResponse))
+    result = db.execute(select(ApprovedClient))
     clients = result.scalars().all()
 
     if clients:
@@ -49,7 +49,11 @@ def get_approved_client(
 
 # ----------------------------------------------------------------------
 # Admin: Aprobar una IP para Device Flow
-@router.post("/approved", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/approved",
+    status_code=status.HTTP_201_CREATED,
+    response_model=ApprovedClientCreate,
+)
 def create_approved_client(
     client_data: ApprovedClientCreate,
     db: Annotated[Session, Depends(get_db)],

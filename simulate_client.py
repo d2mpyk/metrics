@@ -4,7 +4,9 @@ import base64
 import hashlib
 import json
 import os
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives import padding
+from cryptography.hazmat.backends import default_backend
 
 # Configuración
 BASE_URL = "http://localhost:8000"
@@ -13,21 +15,28 @@ METRICS_URL = f"{BASE_URL}/api/v1/clients/metrics"
 
 
 def encrypt_payload(data: dict, secret_key: str) -> dict:
-    """Encripta un diccionario usando AES-GCM y la secret_key."""
+    """Encripta un diccionario usando AES-CBC y la secret_key."""
     # 1. Derivar clave (SHA256)
     key = hashlib.sha256(secret_key.encode()).digest()
-    aesgcm = AESGCM(key)
 
-    # 2. Generar Nonce (12 bytes)
-    nonce = os.urandom(12)
+    # 2. Generar IV (16 bytes para AES)
+    iv = os.urandom(16)
 
-    # 3. Encriptar
+    # 3. Configurar Cipher
+    cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
+    encryptor = cipher.encryptor()
+
+    # 4. Padding (PKCS7)
+    padder = padding.PKCS7(128).padder()
     json_data = json.dumps(data).encode("utf-8")
-    ciphertext = aesgcm.encrypt(nonce, json_data, None)
+    padded_data = padder.update(json_data) + padder.finalize()
+
+    # 5. Encriptar
+    ciphertext = encryptor.update(padded_data) + encryptor.finalize()
 
     # 4. Retornar en Base64
     return {
-        "nonce": base64.b64encode(nonce).decode("utf-8"),
+        "nonce": base64.b64encode(iv).decode("utf-8"),
         "ciphertext": base64.b64encode(ciphertext).decode("utf-8"),
     }
 
