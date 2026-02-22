@@ -34,6 +34,7 @@ templates = Jinja2Templates(directory="templates")
 # Configuración de Logging para Emails
 email_logger = logging.getLogger("email_sender")
 email_logger.setLevel(logging.INFO)
+
 # Evitar duplicar handlers si se recarga el módulo
 if not email_logger.handlers:
     fh = logging.FileHandler("email_logs.log", encoding="utf-8")
@@ -56,6 +57,20 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         return ph.verify(plain_password, hashed_password)
     except VerifyMismatchError:
         return False
+
+
+# ----------------------------------------------------------------------
+# Calcula minutos hasta fin de año
+def get_minutes_until_end_of_year() -> int:
+    """Calcula los minutos restantes hasta el 31 de Dic a las 23:59:00 del año actual."""
+    now = datetime.now(UTC)
+    expiration = datetime(now.year, 12, 31, 23, 59, 0, tzinfo=UTC)
+
+    expiration_unix = expiration.timestamp()
+    now_unix = now.timestamp()
+
+    minutes = int((expiration_unix - now_unix) / 60)
+    return max(minutes, 0)
 
 
 # ----------------------------------------------------------------------

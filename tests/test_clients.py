@@ -1,7 +1,9 @@
 import base64
 import hashlib
 import json
+import jwt
 import os
+from unittest.mock import patch
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.backends import default_backend
@@ -10,6 +12,7 @@ from sqlalchemy import select
 from models.clients import Client, ServerMetric
 from utils.auth import create_access_token
 from utils.crypto import decrypt_payload
+from utils.config import get_settings
 import pytest
 from datetime import datetime, timedelta, timezone
 
@@ -121,6 +124,44 @@ def test_receive_metrics_success(client, db_session):
 
     assert metric is not None
     assert metric.cpu_usage == 55.5
+
+
+def test_receive_metrics_with_expired_token_manual_check(client, db_session):
+    """
+    Verifica que la validación manual de expiración rechace tokens vencidos
+    (ej. del año pasado), confirmando que la lógica de comparación de fechas funciona.
+    """
+    # 1. Crear cliente
+    secret_key = "expired_key"
+    new_client = Client(
+        client_identifier="device-expired",
+        client_secret_key=secret_key,
+        ip_address="127.0.0.1",
+        is_active=True,
+        created_at=datetime.now(timezone.utc),
+    )
+    db_session.add(new_client)
+    db_session.commit()
+
+    # 2. Generar Token con expiración en el pasado (hace 1 año)
+    token = create_access_token(
+        data={
+            "sub": new_client.client_identifier,
+            "role": "device",
+            "client_id": new_client.id,
+        },
+        expires_delta=timedelta(days=-365),
+    )
+
+    # 3. Enviar Request con payload válido pero token expirado
+    payload = encrypt_helper({"cpu": 1}, secret_key)
+    response = client.post(
+        "/api/v1/clients/metrics",
+        json=payload,
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
 
 def test_full_device_flow_integration(client, admin_user):
@@ -241,3 +282,113 @@ def test_get_clients_as_normal_user_is_forbidden(auth_client):
     """Un usuario normal no puede acceder a la lista de clientes."""
     response = auth_client.get("/api/v1/clients")
     assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+def test_renew_token_grace_period_integration(client, db_session):
+    """
+    Simula que estamos a 2 de Enero y un dispositivo intenta renovar
+    un token que venció el 31 de Diciembre del año anterior.
+    """
+    # 1. Setup: Crear cliente
+    secret_key = "device_secret_key"
+    new_client = Client(
+        client_identifier="device-renewal",
+        client_secret_key=secret_key,
+        ip_address="127.0.0.1",
+        is_active=True,
+        created_at=datetime.now(timezone.utc),
+    )
+    db_session.add(new_client)
+    db_session.commit()
+
+    # 2. Preparar fechas simuladas (2 Ene Año Y, Expira 31 Dic Año Y-1)
+    mock_now = datetime(2025, 1, 2, 12, 0, 0, tzinfo=timezone.utc)
+    exp_date = datetime(2024, 12, 31, 23, 59, 0, tzinfo=timezone.utc)
+
+    # 3. Generar token expirado manualmente
+    settings = get_settings()
+    token_data = {
+        "sub": new_client.client_identifier,
+        "type": "client",
+        "role": "device",
+        "client_id": new_client.id,
+        "exp": exp_date,
+        "iat": exp_date - timedelta(days=1),
+    }
+    expired_token = jwt.encode(
+        token_data,
+        settings.SECRET_KEY.get_secret_value(),
+        algorithm=settings.ALGORITHM.get_secret_value(),
+    )
+
+    # 4. Mockear datetime en routers.clients
+    with patch("routers.clients.datetime") as mock_dt:
+        mock_dt.now.return_value = mock_now
+        # Importante: fromtimestamp debe funcionar realmente para validar el año del token
+        mock_dt.fromtimestamp.side_effect = datetime.fromtimestamp
+
+        # 5. Llamar al endpoint
+        response = client.post(
+            "/api/v1/clients/renew-token",
+            headers={"Authorization": f"Bearer {expired_token}"},
+        )
+
+    # 6. Verificar
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert "access_token" in data
+    assert data["token_type"] == "bearer"
+
+
+def test_renew_token_outside_grace_period_fails(client, db_session):
+    """
+    Verifica que la renovación falle si se intenta fuera del periodo de gracia
+    (ej. 6 de Enero).
+    """
+    # 1. Setup: Crear cliente
+    secret_key = "device_secret_key_fail"
+    new_client = Client(
+        client_identifier="device-renewal-fail",
+        client_secret_key=secret_key,
+        ip_address="127.0.0.1",
+        is_active=True,
+        created_at=datetime.now(timezone.utc),
+    )
+    db_session.add(new_client)
+    db_session.commit()
+
+    # 2. Preparar fechas simuladas (6 Ene Año Y, Expira 31 Dic Año Y-1)
+    mock_now = datetime(2025, 1, 6, 12, 0, 0, tzinfo=timezone.utc)
+    exp_date = datetime(2024, 12, 31, 23, 59, 0, tzinfo=timezone.utc)
+
+    # 3. Generar token expirado manualmente
+    settings = get_settings()
+    token_data = {
+        "sub": new_client.client_identifier,
+        "type": "client",
+        "role": "device",
+        "client_id": new_client.id,
+        "exp": exp_date,
+        "iat": exp_date - timedelta(days=1),
+    }
+    expired_token = jwt.encode(
+        token_data,
+        settings.SECRET_KEY.get_secret_value(),
+        algorithm=settings.ALGORITHM.get_secret_value(),
+    )
+
+    # 4. Mockear datetime en routers.clients
+    with patch("routers.clients.datetime") as mock_dt:
+        mock_dt.now.return_value = mock_now
+        # Importante: fromtimestamp debe funcionar realmente para validar el año del token
+        mock_dt.fromtimestamp.side_effect = datetime.fromtimestamp
+
+        # 5. Llamar al endpoint
+        response = client.post(
+            "/api/v1/clients/renew-token",
+            headers={"Authorization": f"Bearer {expired_token}"},
+        )
+
+    # 6. Verificar rechazo
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+    assert "periodo de gracia" in response.json()["detail"]

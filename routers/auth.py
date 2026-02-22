@@ -17,6 +17,7 @@ from utils.auth import (
     create_access_token,
     get_current_user,
     get_current_admin,
+    get_minutes_until_end_of_year,
 )
 from utils.database import get_db
 from utils.config import get_settings
@@ -203,9 +204,8 @@ def device_access_token(
         )
 
     # Generar Token JWT para el dispositivo
-    access_token_expires = timedelta(
-        minutes=int(settings.ACCESS_TOKEN_EXPIRE_MINUTES.get_secret_value())
-    )
+    minutes = get_minutes_until_end_of_year()
+    access_token_expires = timedelta(minutes=minutes)
     access_token = create_access_token(
         data={
             "sub": client.client_identifier,

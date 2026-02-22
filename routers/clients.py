@@ -1,4 +1,5 @@
 from typing import Annotated
+from datetime import datetime, timezone, UTC, timedelta
 from fastapi import APIRouter, Depends, Query, status, HTTPException
 from fastapi.security import OAuth2PasswordBearer
 import jwt
@@ -8,7 +9,11 @@ from sqlalchemy.orm import Session
 # Import's Locales
 from models.clients import Client, ApprovedClient, ServerMetric
 from models.users import User
-from utils.auth import get_current_admin
+from utils.auth import (
+    create_access_token,
+    get_current_admin,
+    get_minutes_until_end_of_year,
+)
 from utils.config import get_settings
 from utils.crypto import decrypt_payload
 from utils.database import get_db
@@ -41,6 +46,12 @@ async def get_current_client(
             settings.SECRET_KEY.get_secret_value(),
             algorithms=[settings.ALGORITHM.get_secret_value()],
         )
+
+        # Validar expiración manualmente comparando con fecha actual
+        exp = payload.get("exp")
+        if exp is None or datetime.now(UTC).timestamp() > exp:
+            raise credentials_exception
+
         client_id: int = payload.get("client_id")
         role: str = payload.get("role")
         if client_id is None or role != "device":
@@ -165,3 +176,79 @@ def receive_metrics(
     db.commit()
 
     return {"status": "ok"}
+
+
+@router.post("/renew-token", status_code=status.HTTP_200_OK)
+def renew_token(
+    token: Annotated[str, Depends(oauth2_scheme)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """
+    Renueva el token del dispositivo.
+    Permite renovación con token expirado SOLO durante los primeros 5 días del año.
+    """
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="No se pudo validar el token para renovación.",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+    try:
+        # 1. Decodificar SIN verificar expiración para leer claims
+        payload = jwt.decode(
+            token,
+            settings.SECRET_KEY.get_secret_value(),
+            algorithms=[settings.ALGORITHM.get_secret_value()],
+            options={"verify_exp": False},
+        )
+
+        client_id: int = payload.get("client_id")
+        role: str = payload.get("role")
+        exp: int = payload.get("exp")
+
+        if client_id is None or role != "device":
+            raise credentials_exception
+
+        # 2. Validar Ventana de Renovación (Grace Period)
+        now = datetime.now(UTC)
+        if exp and now.timestamp() > exp:
+            # Si expiró, solo permitimos renovar del 1 al 3 de Enero
+            if not (now.month == 1 and now.day <= 3):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="El periodo de gracia para renovación ha finalizado (1-5 Ene).",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+
+            # Y solo si el token es del año inmediatamente anterior
+            exp_date = datetime.fromtimestamp(exp, tz=UTC)
+            if exp_date.year != (now.year - 1):
+                raise credentials_exception
+
+    except (jwt.InvalidTokenError, AttributeError):
+        raise credentials_exception
+
+    # 3. Verificar Cliente
+    client = db.execute(select(Client).where(Client.id == client_id)).scalars().first()
+    if not client or not client.is_active:
+        raise credentials_exception
+
+    # 4. Generar Nuevo Token
+    minutes = get_minutes_until_end_of_year()
+    access_token_expires = timedelta(minutes=minutes)
+
+    new_token = create_access_token(
+        data={
+            "sub": client.client_identifier,
+            "type": "client",
+            "role": "device",
+            "client_id": client.id,
+        },
+        expires_delta=access_token_expires,
+    )
+
+    return {
+        "access_token": new_token,
+        "token_type": "bearer",
+        "expires_in": int(access_token_expires.total_seconds()),
+    }
