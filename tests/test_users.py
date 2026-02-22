@@ -10,11 +10,11 @@ from utils.auth import generate_reset_password_token
 
 
 def test_get_users_as_admin(admin_client):
-    """Un administrador debe poder ver la lista de usuarios."""
+    """Un administrador debe poder ver la lista de usuarios (HTML)."""
     response = admin_client.get("/api/v1/users")
     assert response.status_code == status.HTTP_200_OK
-    assert isinstance(response.json(), list)
-    assert len(response.json()) >= 1
+    assert "text/html" in response.headers["content-type"]
+    assert "Lista de Usuarios" in response.text
 
 
 def test_get_users_as_normal_user_forbidden(auth_client):

@@ -1,0 +1,92 @@
+{% extends "dashboard/base_dashboard.html" %}
+
+{% block content %}
+<div class="w3-container w3-padding-32">
+    <div class="w3-card-4 w3-white w3-round-large">
+        <header class="w3-container w3-red w3-round-large">
+            <h3>
+                <i class="fa fa-server"></i> Detalles del Dispositivo
+                <span id="liveIndicator" class="w3-tag w3-green w3-round w3-small w3-animate-fading"
+                    style="display:none; margin-left:10px; vertical-align: middle;">LIVE</span>
+            </h3>
+        </header>
+
+        <div class="w3-container w3-padding-16">
+            <div class="w3-row-padding">
+                <div class="w3-half">
+                    <p><strong>ID Interno:</strong> {{ client.id }}</p>
+                    <p><strong>Identificador (UUID):</strong> {{ client.client_identifier }}</p>
+                    <p><strong>Dirección IP:</strong> {{ client.ip_address }}</p>
+                    <p><strong>Descripción:</strong> {{ client.description or "Sin descripción" }}</p>
+                </div>
+                <div class="w3-half">
+                    <p><strong>Estado:</strong>
+                        <span class="w3-tag {{ 'w3-green' if client.is_active else 'w3-red' }} w3-round">
+                            {{ "Activo" if client.is_active else "Inactivo" }}
+                        </span>
+                    </p>
+                    <p><strong>Última Conexión:</strong> {{ client.last_seen.strftime('%Y-%m-%d %H:%M:%S') if
+                        client.last_seen else "Nunca" }}</p>
+                    <p><strong>Fecha de Registro:</strong> {{ client.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</p>
+                </div>
+            </div>
+            <hr>
+            <h4>Métricas Recientes</h4>
+            <div class="w3-container w3-padding-16">
+                <canvas id="metricsChart" style="width:100%;max-height:400px;"></canvas>
+            </div>
+            <div class="w3-responsive">
+                <table class="w3-table-all w3-small">
+                    <thead>
+                        <tr class="w3-light-grey">
+                            <th>Fecha</th>
+                            <th>CPU</th>
+                            <th>RAM</th>
+                            <th>Disco</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for metric in client.metrics[-5:]|reverse %}
+                        <tr>
+                            <td>{{ metric.timestamp.strftime('%H:%M:%S') }}</td>
+                            <td>{{ metric.cpu_usage }}%</td>
+                            <td>{{ metric.ram_usage }}%</td>
+                            <td>{{ metric.disk_usage }}%</td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="4">No hay métricas recientes.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <footer class="w3-container w3-light-grey w3-padding">
+            <a href="/api/v1/clients" class="w3-button w3-white w3-border w3-border-red w3-round">Volver a la lista</a>
+        </footer>
+    </div>
+</div>
+
+<!-- Input oculto para rastrear el último timestamp recibido -->
+<input type="hidden" id="lastTimestamp"
+    value="{{ client.metrics[-1].timestamp.isoformat() if client.metrics else '' }}">
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="{{ url_for('static', path='js/client_details.js') }}"></script>
+<script>
+    // Inicialización con datos de Jinja2
+    const initialLabels = [
+        {% for metric in client.metrics[-20:] %}
+    "{{ metric.timestamp.strftime('%H:%M:%S') }}",
+        {% endfor %}
+    ];
+
+    const initialCpu = [{% for metric in client.metrics[-20:] %}{{ metric.cpu_usage }}, {% endfor %}];
+    const initialRam = [{% for metric in client.metrics[-20:] %}{{ metric.ram_usage }}, {% endfor %}];
+    const initialDisk = [{% for metric in client.metrics[-20:] %}{{ metric.disk_usage }}, {% endfor %}];
+
+    // Llamada a la función definida en dashboard_clients.js
+    initClientMetrics({{ client.id }}, initialLabels, initialCpu, initialRam, initialDisk);
+</script>
+{% endblock %}

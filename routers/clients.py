@@ -1,9 +1,12 @@
+import math
 from typing import Annotated
 from datetime import datetime, timezone, UTC, timedelta
-from fastapi import APIRouter, Depends, Query, status, HTTPException
+from fastapi import APIRouter, Depends, Query, Request, status, HTTPException
+from fastapi.responses import HTMLResponse
 from fastapi.security import OAuth2PasswordBearer
+from fastapi.templating import Jinja2Templates
 import jwt
-from sqlalchemy import func, select
+from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
 # Import's Locales
@@ -17,6 +20,7 @@ from utils.auth import (
 from utils.config import get_settings
 from utils.crypto import decrypt_payload
 from utils.database import get_db
+from utils.stats import get_dashboard_stats
 from schemas.client import (
     PaginatedClientResponse,
     ApprovedClientCreate,
@@ -25,7 +29,7 @@ from schemas.client import (
 )
 
 router = APIRouter()
-
+templates = Jinja2Templates(directory="templates")
 
 settings = get_settings()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token")
@@ -67,37 +71,86 @@ async def get_current_client(
 
 @router.get(
     "",
-    response_model=PaginatedClientResponse,
+    response_class=HTMLResponse,
     status_code=status.HTTP_200_OK,
+    include_in_schema=False,
 )
 def get_all_clients(
+    request: Request,
     db: Annotated[Session, Depends(get_db)],
     current_admin: Annotated[User, Depends(get_current_admin)],
-    skip: Annotated[int, Query(ge=0, description="Número de registros a saltar")] = 0,
-    limit: Annotated[
-        int, Query(ge=1, le=200, description="Número máximo de registros a devolver")
-    ] = 100,
+    page: Annotated[int, Query(ge=1, description="Número de página")] = 1,
 ):
     """
     Obtiene una lista paginada de todos los clientes registrados.
     Este endpoint es accesible solo para administradores.
     """
-    total = db.execute(select(func.count(Client.id))).scalar() or 0
-    clients = db.execute(select(Client).offset(skip).limit(limit)).scalars().all()
+    limit = 20
+    skip = (page - 1) * limit
 
-    # The response model `PaginatedClientResponse` seems to require a `description`
-    # field for each client, but the `Client` SQLAlchemy model does not have one.
-    # We add a default value to each object before returning to satisfy validation.
-    for client in clients:
-        client.description = "N/A"
+    total_clients = db.execute(select(func.count(Client.id))).scalar() or 0
+    total_pages = math.ceil(total_clients / limit) if total_clients > 0 else 1
 
-    return {"total": total, "clients": clients, "description": "N/A"}
+    clients = (
+        db.execute(select(Client).order_by(desc(Client.id)).offset(skip).limit(limit))
+        .scalars()
+        .all()
+    )
+
+    data = get_dashboard_stats(db)
+
+    return templates.TemplateResponse(
+        request=request,
+        name="dashboard/clients.html",
+        context={
+            "clients": clients,
+            "user": current_admin,
+            "data": data,
+            "title": "Gestión de Dispositivos",
+            "current_page": page,
+            "total_pages": total_pages,
+        },
+    )
+
+
+@router.get(
+    "/{client_id}",
+    response_class=HTMLResponse,
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False,
+)
+def get_client_details(
+    request: Request,
+    client_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    current_admin: Annotated[User, Depends(get_current_admin)],
+):
+    """Muestra la vista de detalles de un cliente específico."""
+    client = db.execute(select(Client).where(Client.id == client_id)).scalars().first()
+    if not client:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Cliente no encontrado"
+        )
+
+    data = get_dashboard_stats(db)
+
+    return templates.TemplateResponse(
+        request=request,
+        name="dashboard/client_details.html",
+        context={
+            "client": client,
+            "user": current_admin,
+            "data": data,
+            "title": f"Detalles: {client.client_identifier}",
+        },
+    )
 
 
 @router.post(
     "/approved",
     response_model=ApprovedClientResponse,
     status_code=status.HTTP_201_CREATED,
+    include_in_schema=False,
 )
 def create_approved_client(
     client_data: ApprovedClientCreate,
@@ -134,6 +187,55 @@ def create_approved_client(
     db.refresh(new_client)
 
     return new_client
+
+
+@router.get(
+    "/{client_id}/metrics/json",
+    status_code=status.HTTP_200_OK,
+)
+def get_client_metrics_json(
+    client_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    current_admin: Annotated[User, Depends(get_current_admin)],
+    last_timestamp: Annotated[datetime | None, Query()] = None,
+):
+    """Devuelve las últimas 20 métricas de un cliente en formato JSON para polling."""
+    client_exists = db.execute(select(Client.id).where(Client.id == client_id)).scalar()
+    if not client_exists:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Cliente no encontrado"
+        )
+
+    query = select(ServerMetric).where(ServerMetric.client_id == client_id)
+
+    if last_timestamp:
+        # Si hay timestamp, traemos solo las nuevas (orden ascendente para el gráfico)
+        query = query.where(ServerMetric.timestamp > last_timestamp).order_by(
+            ServerMetric.timestamp.asc()
+        )
+        metrics = db.execute(query).scalars().all()
+    else:
+        # Carga inicial: últimas 20
+        metrics = (
+            db.execute(query.order_by(desc(ServerMetric.timestamp)).limit(20))
+            .scalars()
+            .all()
+        )
+        metrics = list(reversed(metrics))  # Invertir para orden cronológico
+
+    data = []
+    for m in metrics:
+        data.append(
+            {
+                "timestamp": m.timestamp.strftime("%H:%M:%S"),
+                "full_timestamp": m.timestamp.isoformat(),
+                "cpu": m.cpu_usage,
+                "ram": m.ram_usage,
+                "disk": m.disk_usage,
+            }
+        )
+
+    return data
 
 
 @router.get(

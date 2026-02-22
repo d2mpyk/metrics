@@ -37,9 +37,9 @@ document.addEventListener("DOMContentLoaded", function () {
             const accessToken = data.access_token;
             const tokenType = data.token_type;
             console.log(`Token Recibido: ${accessToken}`)
-            
+
             // 3️⃣ Informar Acceso
-            alert("Login successful!");
+            //alert("Login successful!");
 
             // 4️⃣ Redirigir al endpoint protegido
             window.location.href = "/api/v1/dashboard";
@@ -91,7 +91,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     // JS RESET
     const formReset = document.getElementById("resetPasswordForm");
-    
+
     // Obtener token de la URL (query param ?token=...)
     const urlParams = new URLSearchParams(window.location.search);
     const token = urlParams.get('token');

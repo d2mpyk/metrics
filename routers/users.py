@@ -15,6 +15,7 @@ from fastapi import (
     UploadFile,
     Form,
 )
+from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -46,6 +47,7 @@ from schemas.user import (
     UserUpdate,
 )
 from utils.users import check_email_exists, check_username_exists
+from utils.stats import get_dashboard_stats
 
 
 # Instancia de las rutas
@@ -220,21 +222,30 @@ def reset_password(
 # Muestra todos los usuarios
 @router.get(
     "",
-    response_model=list[UserResponsePrivate],
+    response_class=HTMLResponse,
     status_code=status.HTTP_200_OK,
+    include_in_schema=False,
 )
 def get_users(
+    request: Request,
     db: Annotated[Session, Depends(get_db)],
     user_admin: Annotated[User, Depends(get_current_admin)],
 ):
     result = db.execute(select(User))
     users = result.scalars().all()
 
-    if users:
-        return users
-    raise HTTPException(
-        status_code=status.HTTP_404_NOT_FOUND,
-        detail="No hay usuarios que mostrar",
+    # Usar datos cacheados para los contadores del dashboard
+    data = get_dashboard_stats(db)
+
+    return templates.TemplateResponse(
+        request=request,
+        name="dashboard/users.html",
+        context={
+            "users": users,
+            "user": user_admin,
+            "data": data,
+            "title": "Gestión de Usuarios",
+        },
     )
 
 
