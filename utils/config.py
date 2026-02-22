@@ -10,6 +10,11 @@ class Settings(BaseSettings):
 
     ADMIN: SecretStr
     NAME: SecretStr
+    DB_USER: SecretStr
+    DB_PASSWORD: SecretStr
+    DB_HOST: SecretStr
+    DB_PORT: int = 3306
+    DB_NAME: SecretStr
     SECRET_KEY: SecretStr
     ALGORITHM: SecretStr
     ACCESS_TOKEN_EXPIRE_MINUTES: SecretStr
