@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from models.clients import ServerMetric
 from utils.auth import CurrentUser
 from utils.database import get_db
-from utils.users import get_total_users
+from utils.users import get_total_users, get_total_clients
 
 
 # Instancia de las rutas
@@ -42,6 +42,7 @@ def dashboard(
 ):
     data = {}
     data["total_users"] = get_total_users(db)
+    data["total_clients"] = get_total_clients(db)
     return templates.TemplateResponse(
         "dashboard/dashboard.html",
         {

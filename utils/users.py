@@ -1,11 +1,20 @@
 from sqlalchemy.orm import Session
 from models.users import User
+from models.clients import Client
 from sqlalchemy import func, select
 from fastapi import HTTPException, status
 
 
 def get_total_users(db: Session) -> int:
+    if db.query(func.count(User.id)).scalar() is None:
+        return 0
     return db.query(func.count(User.id)).scalar()
+
+
+def get_total_clients(db: Session) -> int:
+    if db.query(func.count(Client.id)).scalar() is None:
+        return 0
+    return db.query(func.count(Client.id)).scalar()
 
 
 def check_username_exists(
