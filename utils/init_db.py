@@ -1,4 +1,5 @@
 from models.users import ApprovedUsers, User
+from models.clients import ApprovedClient
 from .database import SessionLocal
 from utils.auth import hash_password
 from utils.config import get_settings
@@ -101,5 +102,28 @@ def init_approved_users():
     except Exception as e:
         print(f"Error: Inicializando DB: {e}, ", file=sys.stderr)
         sys.exit(1)
+    finally:
+        db.close()
+
+
+def init_approved_client():
+    """Inicializa el cliente local (localhost) como aprobado por defecto."""
+    db = SessionLocal()
+    try:
+        # Verificar si ya existe la IP local
+        client = (
+            db.query(ApprovedClient)
+            .filter(ApprovedClient.ip_address == "127.0.0.1")
+            .first()
+        )
+
+        if not client:
+            client = ApprovedClient(
+                ip_address="127.0.0.1", description="Servidor de Monitoreo"
+            )
+            db.add(client)
+            db.commit()
+    except Exception as e:
+        print(f"Error: Inicializando Cliente Aprobado: {e}", file=sys.stderr)
     finally:
         db.close()

@@ -146,6 +146,19 @@ def get_client_details(
     )
 
 
+@router.get(
+    "/approved",
+    response_model=list[ApprovedClientResponse],
+    status_code=status.HTTP_200_OK,
+)
+def get_approved_clients(
+    db: Annotated[Session, Depends(get_db)],
+    current_admin: Annotated[User, Depends(get_current_admin)],
+):
+    """Lista todas las IPs aprobadas."""
+    return db.execute(select(ApprovedClient)).scalars().all()
+
+
 @router.post(
     "/approved",
     response_model=ApprovedClientResponse,
@@ -236,19 +249,6 @@ def get_client_metrics_json(
         )
 
     return data
-
-
-@router.get(
-    "/approved",
-    response_model=list[ApprovedClientResponse],
-    status_code=status.HTTP_200_OK,
-)
-def get_approved_clients(
-    db: Annotated[Session, Depends(get_db)],
-    current_admin: Annotated[User, Depends(get_current_admin)],
-):
-    """Lista todas las IPs aprobadas."""
-    return db.execute(select(ApprovedClient)).scalars().all()
 
 
 @router.post("/metrics", status_code=status.HTTP_201_CREATED)

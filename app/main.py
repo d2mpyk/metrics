@@ -11,7 +11,7 @@ import sys
 # Imports Locales
 from utils.database import Base, engine
 from routers import auth, clients, dashboard, dev, media, users
-from utils.init_db import get_init_config, init_approved_users
+from utils.init_db import get_init_config, init_approved_users, init_approved_client
 from utils.middleware import HTMLAuthMiddleware
 
 
@@ -21,6 +21,8 @@ get_init_config()
 Base.metadata.create_all(bind=engine)
 # Verificación inicial de base de datos
 init_approved_users()
+# Inicialización de clientes aprobados por defecto (Localhost)
+init_approved_client()
 # Instancia la aplicación de FastAPI
 app = FastAPI(
     title="FastAPI Template",
