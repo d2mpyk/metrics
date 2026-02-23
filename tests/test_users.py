@@ -280,6 +280,13 @@ def test_update_profile_with_image_too_large(auth_client):
     assert "archivo es demasiado grande" in response.json()["detail"]
 
 
+def test_update_profile_with_no_data_fails(auth_client):
+    """Verifica que se devuelva un error si no se envían datos para actualizar."""
+    response = auth_client.patch("/api/v1/users/me", data={})
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert "No se proporcionaron datos para actualizar" in response.json()["detail"]
+
+
 def test_user_cannot_update_unsupported_fields_via_me_endpoint(auth_client):
     """
     Verifica que campos no permitidos (como 'role') sean ignorados silenciosamente
@@ -349,8 +356,13 @@ def test_unauthenticated_user_cannot_change_password(client):
     response = client.patch(
         "/api/v1/users/me/password",
         json=password_payload,
+        follow_redirects=False,
     )
-    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+    assert response.status_code in [
+        status.HTTP_302_FOUND,
+        status.HTTP_303_SEE_OTHER,
+        status.HTTP_307_TEMPORARY_REDIRECT,
+    ]
 
 
 # -----------------------------------------------------------------------------

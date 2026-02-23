@@ -2,16 +2,6 @@
 
 {% block content %}
 <div class="w3-container">
-    
-    <!-- Flash Message -->
-    {% if flash_message %}
-    <div class="w3-panel w3-{{ flash_type or 'blue' }} w3-display-container w3-round w3-animate-opacity">
-        <span onclick="this.parentElement.style.display='none'"
-            class="w3-button w3-large w3-display-topright">&times;</span>
-        <p>{{ flash_message }}</p>
-    </div>
-    {% endif %}
-
     <h5>Lista de IPs Aprobadas (Pendientes de Registro)</h5>
     <div class="w3-responsive">
         <table class="w3-table-all w3-hoverable">
@@ -21,6 +11,7 @@
                     <th>IP</th>
                     <th>Descripción</th>
                     <th>Fecha de Aprobación</th>
+                    <th>Acciones / Códigos Pendientes</th>
                 </tr>
             </thead>
             <tbody>
@@ -30,10 +21,31 @@
                     <td>{{ c.ip_address }}</td>
                     <td>{{ c.description }}</td>
                     <td>{{ c.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                    <td>
+                        {% if c.pending_codes %}
+                        {% for code in c.pending_codes %}
+                        <div class="w3-margin-bottom">
+                            <span class="w3-tag w3-blue-grey w3-round" title="Código de usuario">{{ code.user_code
+                                }}</span>
+                            <form action="{{ url_for('device_activate_submit') }}" method="post"
+                                style="display: inline-block; margin-left: 8px;">
+                                <input type="hidden" name="user_code" value="{{ code.user_code }}">
+                                <button type="submit"
+                                    class="w3-button w3-tiny w3-green w3-round w3-hover-white w3-hover-text-green"
+                                    onclick="return confirm('¿Activar este dispositivo? El dispositivo podrá obtener sus credenciales.')">
+                                    <i class="fa fa-check"></i> Activar
+                                </button>
+                            </form>
+                        </div>
+                        {% endfor %}
+                        {% else %}
+                        <span class="w3-text-grey w3-small"><em>Esperando conexión del dispositivo...</em></span>
+                        {% endif %}
+                    </td>
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="4" class="w3-center">No hay IPs aprobadas pendientes.</td>
+                    <td colspan="5" class="w3-center">No hay IPs aprobadas pendientes.</td>
                 </tr>
                 {% endfor %}
             </tbody>

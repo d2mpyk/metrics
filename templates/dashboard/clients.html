@@ -1,89 +1,154 @@
 {% extends "dashboard/base_dashboard.html" %}
 
+{% block title %}{{ title }}{% endblock %}
+
 {% block content %}
-<div class="w3-container">
-    <h5>Lista de Dispositivos Registrados</h5>
-    <div class="w3-responsive">
-        <table class="w3-table-all w3-hoverable">
-            <thead>
-                <tr class="w3-teal">
-                    <th>ID</th>
-                    <th>Identificador</th>
-                    <th>IP</th>
-                    <th>Descripción</th>
-                    <th>Estado</th>
-                    <th>Última Conexión</th>
-                    <th>Creado</th>
+<div class="container mx-auto px-4 py-8">
+    <h1 class="text-3xl font-bold text-gray-800 mb-6">{{ title }}</h1>
+
+    <!-- Card Grid Section -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6 mb-8">
+        {% for client in clients %}
+        {% set metric = client.latest_metric %}
+        {% set is_stale = not metric or (now - metric.timestamp).total_seconds() > 300 %}
+        <a href="{{ url_for('get_client_details', client_id=client.id) }}"
+            class="block h-full hover:no-underline transform hover:scale-105 transition-transform duration-200">
+            <div
+                class="bg-white rounded-lg shadow-md p-4 flex flex-col justify-between border-t-4 {{ 'border-red-500' if is_stale else 'border-green-500' }} h-full">
+                <!-- Card Header: CPU, Status Icon, RAM -->
+                <div class="flex justify-between items-start text-sm">
+                    <!-- CPU -->
+                    <div class="text-center">
+                        <span class="font-bold text-gray-500">CPU</span>
+                        {% if metric %}
+                        <p
+                            class="text-lg font-semibold {{ 'text-red-600' if metric.cpu_usage > 80 else 'text-green-600' }}">
+                            {{ "%.1f"|format(metric.cpu_usage) }}%
+                        </p>
+                        {% else %}
+                        <p class="text-lg font-semibold text-gray-400">--</p>
+                        {% endif %}
+                    </div>
+                    <!-- Status Icon -->
+                    <div class="text-center">
+                        <div class="p-2 rounded-md {{ 'bg-red-100' if is_stale else 'bg-green-100' }}">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+                                stroke="currentColor"
+                                class="w-6 h-6 {{ 'text-red-500' if is_stale else 'text-green-500' }}">
+                                <path stroke-linecap="round" stroke-linejoin="round"
+                                    d="M9 17.25v1.007a3 3 0 0 1-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0 1 15 18.257V17.25m6-12V15a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 15V5.25A2.25 2.25 0 0 1 5.25 3h13.5A2.25 2.25 0 0 1 21 5.25Z" />
+                            </svg>
+                        </div>
+                    </div>
+                    <!-- RAM -->
+                    <div class="text-center">
+                        <span class="font-bold text-gray-500">RAM</span>
+                        {% if metric %}
+                        <p
+                            class="text-lg font-semibold {{ 'text-red-600' if metric.ram_usage > 80 else 'text-green-600' }}">
+                            {{ "%.1f"|format(metric.ram_usage) }}%
+                        </p>
+                        {% else %}
+                        <p class="text-lg font-semibold text-gray-400">--</p>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Card Body: Name and IP -->
+                <div class="text-center my-4">
+                    <p class="font-bold text-gray-800 truncate"
+                        title="{{ client.description or client.client_identifier }}">
+                        {{ client.description or client.client_identifier }}</p>
+                    <p class="text-xs text-gray-500">{{ client.ip_address }}</p>
+                </div>
+
+                <!-- Card Footer: Disk -->
+                <div class="text-center mt-auto">
+                    <span class="text-sm font-semibold text-gray-600">
+                        Ocupación Disco:
+                        {% if metric and metric.disk_usage is not none %}
+                        <span class="font-bold {{ 'text-red-600' if metric.disk_usage > 85 else 'text-green-600' }}">
+                            {{ "%.2f"|format(metric.disk_usage) }} %
+                        </span>
+                        {% else %}
+                        <span class="font-bold text-gray-400">---</span>
+                        {% endif %}
+                    </span>
+                </div>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+
+    <!-- Client List Table -->
+    <div class="bg-white shadow-md rounded-lg overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th scope="col"
+                        class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Identificador
+                    </th>
+                    <th scope="col"
+                        class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Descripción
+                    </th>
+                    <th scope="col"
+                        class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        IP
+                    </th>
+                    <th scope="col"
+                        class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Estado
+                    </th>
+                    <th scope="col"
+                        class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Registrado
+                    </th>
+                    <th scope="col" class="relative px-6 py-3">
+                        <span class="sr-only">Acciones</span>
+                    </th>
                 </tr>
             </thead>
-            <tbody>
-                {% for c in clients %}
-                <tr class="w3-hover-teal w3-hover-text-white" style="cursor: pointer;"
-                    onclick="window.location.href='/api/v1/clients/{{ c.id }}'">
-                    <td>{{ c.id }}</td>
-                    <td>{{ c.client_identifier }}</td>
-                    <td>{{ c.ip_address }}</td>
-                    <td>{{ c.description }}</td>
-                    <td>{{ "Activo" if c.is_active else "Inactivo" }}</td>
-                    <td>{{ c.last_seen.strftime('%Y-%m-%d %H:%M') if c.last_seen else "Nunca" }}</td>
-                    <td>{{ c.created_at.strftime('%Y-%m-%d') }}</td>
-                </tr>
-                {% else %}
+            <tbody class="bg-white divide-y divide-gray-200">
+                {% for client in clients %}
                 <tr>
-                    <td colspan="7" class="w3-center">No hay dispositivos registrados.</td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <div class="text-sm text-gray-900 font-mono" title="{{ client.client_identifier }}">{{
+                            client.client_identifier[:8] }}...</div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <div class="text-sm text-gray-900 truncate max-w-xs" title="{{ client.description or '' }}">{{
+                            client.description or 'N/A' }}</div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <div class="text-sm text-gray-500">{{ client.ip_address }}</div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        {% if client.is_active %}
+                        <span
+                            class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+                            Activo
+                        </span>
+                        {% else %}
+                        <span
+                            class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">
+                            Inactivo
+                        </span>
+                        {% endif %}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {{ client.created_at.strftime('%Y-%m-%d') }}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                        <a href="{{ url_for('get_client_details', client_id=client.id) }}"
+                            class="text-indigo-600 hover:text-indigo-900">Detalles</a>
+                    </td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
-    <!-- Controles de Paginación -->
-    <div class="w3-center w3-padding-32">
-        <div class="w3-bar">
-            {% if current_page > 1 %}
-            <a href="?page={{ current_page - 1 }}" class="w3-button w3-hover-teal">&laquo; Anterior</a>
-            {% else %}
-            <a class="w3-button w3-disabled">&laquo; Anterior</a>
-            {% endif %}
-
-            <span class="w3-button w3-teal w3-hover-white w3-hover-text-teal">Página {{ current_page }} de {{
-                total_pages }}</span>
-
-            {% if current_page < total_pages %} <a href="?page={{ current_page + 1 }}" class="w3-button w3-hover-teal">
-                Siguiente &raquo;</a>
-                {% else %}
-                <a class="w3-button w3-disabled">Siguiente &raquo;</a>
-                {% endif %}
-        </div>
-    </div>
-
-    <!-- Botón Flotante -->
-    <button class="w3-button w3-xlarge w3-circle w3-blue w3-hover-white w3-hover-text-blue w3-card-4 w3-animate-zoom"
-        style="position:fixed;bottom:30px;right:30px;z-index:100;" id="btnOpenModal" title="Registrar IP Aprobada">
-        <i class="fa fa-plus"></i>
-    </button>
-
-    <!-- Modal para Registrar IP Aprobada -->
-    <div id="modalApproved" class="w3-modal">
-        <div class="w3-modal-content w3-card-4 w3-animate-zoom w3-round-large" style="max-width:500px">
-            <header class="w3-container w3-blue w3-round-top-large">
-                <span id="btnCloseModal"
-                    class="w3-button w3-red w3-hover-white w3-hover-text-red w3-display-topright"><strong>&times;</strong></span>
-                <h3>Registrar Dispositivo</h3>
-            </header>
-            <form class="w3-container w3-padding-16" id="formApproved">
-                <label>Dirección IP</label>
-                <input class="w3-input w3-border w3-round w3-margin-bottom" type="text" name="ip_address"
-                    placeholder="Ej: 192.168.1.100" required>
-                <label>Descripción</label>
-                <input class="w3-input w3-border w3-round w3-margin-bottom" type="text" name="description"
-                    placeholder="Ej: Servidor de Base de Datos" required>
-                <button class="w3-button w3-block w3-blue w3-hover-white w3-hover-text-blue w3-round w3-section"
-                    type="submit">Aprobar</button>
-            </form>
-        </div>
-    </div>
-
-    <script src="{{ url_for('static', path='js/clients.js') }}"></script>
-
+    <!-- Pagination would go here -->
 </div>
 {% endblock %}

@@ -80,8 +80,13 @@ def test_access_protected_route_via_header(client, test_user):
 
 def test_access_denied_without_token(client):
     """Verifica que se deniegue el acceso si no hay cookie ni header."""
-    response = client.get("/api/v1/users/me")
-    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+    # Al ser una app web, redirige al login en lugar de dar 401 JSON
+    response = client.get("/api/v1/users/me", follow_redirects=False)
+    assert response.status_code in [
+        status.HTTP_302_FOUND,
+        status.HTTP_303_SEE_OTHER,
+        status.HTTP_307_TEMPORARY_REDIRECT,
+    ]
 
 
 def test_logout_clears_cookie(client, test_user):
@@ -133,8 +138,11 @@ def test_device_activation_flow_redirects(client, admin_user, db_session):
 
     # 3. Caso Éxito: Preparar datos (IP aprobada y código generado)
     # Nota: 'testclient' es el host por defecto de TestClient
-    db_session.add(ApprovedClient(ip_address="testclient", description="Test Auth"))
-
+    approved_client_rec = ApprovedClient(
+        ip_address="testclient", description="Test Auth"
+    )
+    db_session.add(approved_client_rec)
+    db_session.commit()
     user_code = "AAAA-BBBB"
     device_code = secrets.token_urlsafe(32)
     db_session.add(
@@ -158,3 +166,7 @@ def test_device_activation_flow_redirects(client, admin_user, db_session):
     assert resp_success.headers["location"] == "/api/v1/dashboard"
     assert "flash_message" in resp_success.cookies
     assert resp_success.cookies["flash_type"] == "green"
+
+    # 5. Verificar que el ApprovedClient fue eliminado
+    deleted_approved_client = db_session.get(ApprovedClient, approved_client_rec.id)
+    assert deleted_approved_client is None

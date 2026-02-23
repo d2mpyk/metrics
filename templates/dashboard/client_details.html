@@ -1,109 +1,65 @@
-{% extends "dashboard/base_dashboard.html" %}
+{% extends "dashboard/base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
 
 {% block content %}
-<div class="w3-container w3-padding-32">
-    <div class="w3-card-4 w3-white w3-round-large">
-        <header class="w3-container w3-red w3-round-large">
-            <h3>
-                <i class="fa fa-server"></i> Detalles del Dispositivo
-                <span id="liveIndicator" class="w3-tag w3-green w3-round w3-small w3-animate-fading"
-                    style="display:none; margin-left:10px; vertical-align: middle;">LIVE</span>
-            </h3>
-        </header>
+<div class="container mx-auto px-4 py-8">
+    <h1 class="text-3xl font-bold text-gray-800 mb-6">{{ title }}</h1>
 
-        <div class="w3-container w3-padding-16">
-            <div class="w3-row-padding">
-                <div class="w3-half">
-                    <p><strong>ID Interno:</strong> {{ client.id }}</p>
-                    <p><strong>Identificador (UUID):</strong> {{ client.client_identifier }}</p>
-                    <p><strong>Dirección IP:</strong> {{ client.ip_address }}</p>
-                    <p><strong>Descripción:</strong> {{ client.description or "Sin descripción" }}</p>
-                </div>
-                <div class="w3-half">
-                    <p><strong>Estado:</strong>
-                        <span class="w3-tag {{ 'w3-green' if client.is_active else 'w3-red' }} w3-round">
-                            {{ "Activo" if client.is_active else "Inactivo" }}
-                        </span>
-                        <span id="metricStatus" class="w3-tag w3-grey w3-round"
-                            style="margin-left:5px;">Sincronizando...</span>
-                    </p>
-                    <p><strong>Última Conexión:</strong> {{ client.last_seen.strftime('%Y-%m-%d %H:%M:%S') if
-                        client.last_seen else "Nunca" }}</p>
-                    <p><strong>Fecha de Registro:</strong> {{ client.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</p>
-                </div>
+    <div class="bg-white shadow-md rounded-lg p-6">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+                <h3 class="text-lg font-semibold text-gray-700">Identificador</h3>
+                <p class="text-gray-600 font-mono">{{ client.client_identifier }}</p>
             </div>
-            <hr>
-            <h4>Métricas Recientes</h4>
-            <div class="w3-container w3-padding-16">
-                <canvas id="metricsChart" style="width:100%;max-height:400px;"></canvas>
+            <div>
+                <h3 class="text-lg font-semibold text-gray-700">Dirección IP</h3>
+                <p class="text-gray-600">{{ client.ip_address }}</p>
             </div>
-            <h4>Velocidad de Red</h4>
-            <div class="w3-container w3-card w3-white w3-round w3-margin-bottom">
-                <canvas id="networkChart" style="width:100%;max-height:400px;"></canvas>
+            <div>
+                <h3 class="text-lg font-semibold text-gray-700">Fecha de Creación</h3>
+                <p class="text-gray-600">{{ client.created_at.strftime('%Y-%m-%d %H:%M:%S') }} UTC</p>
             </div>
-            <div class="w3-responsive">
-                <table class="w3-table-all w3-small">
-                    <thead>
-                        <tr class="w3-light-grey">
-                            <th>Fecha</th>
-                            <th>CPU</th>
-                            <th>RAM</th>
-                            <th>Disco</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for metric in client.metrics[-5:]|reverse %}
-                        <tr>
-                            <td>{{ metric.timestamp.strftime('%H:%M:%S') }}</td>
-                            <td>{{ metric.cpu_usage }}%</td>
-                            <td>{{ metric.ram_usage }}%</td>
-                            <td>{{ metric.disk_usage }}%</td>
-                        </tr>
-                        {% else %}
-                        <tr>
-                            <td colspan="4">No hay métricas recientes.</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+            <div>
+                <h3 class="text-lg font-semibold text-gray-700">Estado</h3>
+                <p class="text-gray-600">
+                    {% if client.is_active %}
+                    <span
+                        class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+                        Activo
+                    </span>
+                    {% else %}
+                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">
+                        Inactivo
+                    </span>
+                    {% endif %}
+                </p>
             </div>
         </div>
-        <footer class="w3-container w3-light-grey w3-padding">
-            <a href="/api/v1/clients" class="w3-button w3-white w3-border w3-border-red w3-round">Volver a la lista</a>
-        </footer>
+
+        <hr class="my-6">
+
+        <div>
+            <h3 class="text-lg font-semibold text-gray-700 mb-4">Actualizar Descripción</h3>
+            <form action="/api/v1/clients/{{ client.id }}/update" method="post" class="space-y-4">
+                <div>
+                    <label for="description" class="block text-sm font-medium text-gray-700">Descripción del
+                        Dispositivo</label>
+                    <div class="mt-1">
+                        <input type="text" name="description" id="description"
+                            class="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
+                            value="{{ client.description or '' }}" placeholder="Ej: Servidor de Producción - Rack 2">
+                    </div>
+                </div>
+                <div>
+                    <button type="submit"
+                        class="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                        Guardar Cambios
+                    </button>
+                </div>
+            </form>
+        </div>
+
     </div>
 </div>
-
-<!-- Input oculto para rastrear el último timestamp recibido -->
-<input type="hidden" id="lastTimestamp"
-    value="{{ client.metrics[-1].timestamp.isoformat() if client.metrics else '' }}">
-
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script src="{{ url_for('static', path='js/client_details.js') }}"></script>
-<script>
-    // Inicialización con datos de Jinja2
-    const initialLabels = [
-        {% for metric in client.metrics[-20:] %}
-    "{{ metric.timestamp.strftime('%H:%M:%S') }}",
-        {% endfor %}
-    ];
-
-    const initialCpu = [{% for metric in client.metrics[-20:] %}{ { metric.cpu_usage } }, {% endfor %}];
-    const initialRam = [{% for metric in client.metrics[-20:] %}{ { metric.ram_usage } }, {% endfor %}];
-    const initialDisk = [{% for metric in client.metrics[-20:] %}{ { metric.disk_usage } }, {% endfor %}];
-    // Nuevos arrays para datos de red (Conversión a KB/s)
-    const netSentData = [{% for m in client.metrics[-20:] %}{ { (m.net_speed_sent / 1024) | round(2) if m.net_speed_sent else 0 } }, {% endfor %}];
-    const netRecvData = [{% for m in client.metrics[-20:] %}{ { (m.net_speed_recv / 1024) | round(2) if m.net_speed_recv else 0 } }, {% endfor %}];
-
-    // Llamada a la función definida en dashboard_clients.js
-    initClientMetrics(
-        {{ client.id }},
-        initialLabels,
-        initialCpu,
-        initialRam,
-        initialDisk,
-        netSentData,
-        netRecvData
-    );
-</script>
 {% endblock %}

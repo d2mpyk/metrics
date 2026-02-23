@@ -1,11 +1,11 @@
-import base64, hashlib, json, jwt, os, pytest, time
+import base64, hashlib, json, jwt, os, pytest, time, secrets
 from unittest.mock import patch
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.backends import default_backend
 from fastapi import status
 from sqlalchemy import select
-from models.clients import Client, ServerMetric
+from models.clients import Client, ServerMetric, ApprovedClient, DeviceCode
 from utils.auth import create_access_token
 from utils.crypto import decrypt_payload
 from utils.config import get_settings
@@ -214,7 +214,7 @@ def test_full_device_flow_integration(client, admin_user):
         "/api/v1/clients/approved", data=approved_payload, follow_redirects=False
     )
     assert resp_approve.status_code == status.HTTP_303_SEE_OTHER
-    assert resp_approve.headers["location"] == "/api/v1/clients/approved"
+    assert resp_approve.headers["location"].endswith("/api/v1/clients/approved")
     # Verificar que se estableció el mensaje flash
     assert "flash_message" in resp_approve.cookies
 
@@ -257,7 +257,7 @@ def test_full_device_flow_integration(client, admin_user):
     client_secret_key = token_data["client_secret_key"]
 
     # 6. Enviar Métricas
-    metrics_data = {"cpu": 12.3, "ram": 45.6, "disk": 78.9}
+    metrics_data = {"cpu": 12.3, "ram": 45.6, "disk": 78.9, "net_sent": 0, "net_recv": 0}
     encrypted_payload = encrypt_helper(metrics_data, client_secret_key)
 
     resp_metrics = client.post(
@@ -293,6 +293,58 @@ def test_get_clients_dashboard_as_admin(admin_client, db_session):
     assert response.status_code == status.HTTP_200_OK
     assert "text/html" in response.headers["content-type"]
     assert "device-test-html" in response.text
+
+
+def test_create_duplicate_approved_client_fails(admin_client, db_session):
+    """
+    Verifica que al intentar agregar una IP ya aprobada, se reciba un
+    mensaje flash de error y se redirija correctamente.
+    """
+    ip = "192.168.1.111"
+    # 1. Agregar la IP una vez
+    db_session.add(ApprovedClient(ip_address=ip, description="First time"))
+    db_session.commit()
+
+    # 2. Intentar agregarla de nuevo
+    response = admin_client.post(
+        "/api/v1/clients/approved",
+        data={"ip_address": ip, "description": "Second time"},
+        follow_redirects=False,
+    )
+
+    # 3. Verificar redirección y cookie flash de error
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    assert response.headers["location"].endswith("/api/v1/clients/approved")
+    assert "flash_message" in response.cookies
+    assert response.cookies["flash_type"] == "red"
+    assert "ya se encuentra aprobada" in response.cookies["flash_message"]
+
+
+def test_get_approved_clients_shows_pending_codes(admin_client, db_session):
+    """
+    Verifica que la vista de IPs aprobadas muestre los códigos de usuario
+    pendientes de activación si un dispositivo ha iniciado el proceso.
+    """
+    # 1. Aprobar una IP y simular que un dispositivo ha solicitado un código
+    ip = "192.168.1.123"
+    user_code = "C0D3T3ST"
+    db_session.add(ApprovedClient(ip_address=ip, description="Device with code"))
+    db_session.add(
+        DeviceCode(
+            device_code=secrets.token_urlsafe(16),
+            user_code=user_code,
+            ip_address=ip,
+            expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+            is_verified=False,
+        )
+    )
+    db_session.commit()
+
+    # 2. Obtener la vista de clientes aprobados y verificar que el código aparece
+    response = admin_client.get("/api/v1/clients/approved")
+    assert response.status_code == status.HTTP_200_OK
+    assert user_code in response.text
+    assert "Activar" in response.text
 
 
 def test_get_clients_as_normal_user_is_forbidden(auth_client):
@@ -409,3 +461,144 @@ def test_renew_token_outside_grace_period_fails(client, db_session):
     # 6. Verificar rechazo
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
     assert "periodo de gracia" in response.json()["detail"]
+
+
+def test_client_description_auto_update(client, db_session):
+    """
+    Verifica que si un cliente tiene descripción vacía, se actualice
+    automáticamente desde ApprovedClient al autenticarse (get_current_client).
+    """
+    # 1. Crear ApprovedClient con descripción
+    ip = "192.168.1.50"
+    desc = "Auto Description"
+    approved = ApprovedClient(ip_address=ip, description=desc)
+    db_session.add(approved)
+
+    # 2. Crear Client con descripción vacía
+    secret_key = "secret"
+    test_client = Client(
+        client_identifier="device-no-desc",
+        client_secret_key=secret_key,
+        ip_address=ip,
+        is_active=True,
+        created_at=datetime.now(timezone.utc),
+        description=None,  # Vacía
+    )
+    db_session.add(test_client)
+    db_session.commit()
+
+    # 3. Generar Token
+    token = create_access_token(
+        data={
+            "sub": test_client.client_identifier,
+            "role": "device",
+            "client_id": test_client.id,
+        }
+    )
+
+    # 4. Hacer request a endpoint protegido (ej: metrics) para disparar get_current_client
+    # Usamos un payload válido para que pase la validación de métricas
+    metrics_data = {"cpu": 10.0, "ram": 20.0, "disk": 5.0, "net_sent": 0, "net_recv": 0}
+    payload = encrypt_helper(metrics_data, secret_key)
+
+    response = client.post(
+        "/api/v1/clients/metrics",
+        json=payload,
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == status.HTTP_201_CREATED
+
+    # 5. Verificar que la descripción se actualizó en DB
+    db_session.refresh(test_client)
+    assert test_client.description == desc
+
+
+def test_update_client_description_manually_redirects(admin_client, db_session):
+    """
+    Verifica que el endpoint de actualización manual de descripción
+    funciona, actualiza la DB y redirige correctamente.
+    """
+    # 1. Crear un cliente de prueba en la DB
+    client_to_update = Client(
+        client_identifier="device-to-update",
+        client_secret_key="secret",
+        ip_address="192.168.1.200",
+        is_active=True,
+        created_at=datetime.now(timezone.utc),
+        description="Old Description",
+    )
+    db_session.add(client_to_update)
+    db_session.commit()
+
+    # 2. Realizar la petición POST para actualizar
+    new_description = "New Manual Description"
+    response = admin_client.post(
+        f"/api/v1/clients/{client_to_update.id}/update",
+        data={"description": new_description},
+        follow_redirects=False,  # No seguir la redirección para poder inspeccionarla
+    )
+
+    # 3. Verificar la redirección
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    # La URL de redirección debe apuntar a la vista de detalles del cliente
+    assert response.headers["location"].endswith(f"/api/v1/clients/{client_to_update.id}")
+
+    # 4. Verificar que el dato se actualizó en la base de datos
+    db_session.refresh(client_to_update)
+    assert client_to_update.description == new_description
+
+
+def test_get_all_clients_attaches_latest_metric(admin_client, db_session):
+    """
+    Verifica que el dashboard de clientes muestre la métrica más reciente
+    para cada dispositivo en las tarjetas.
+    """
+    # 1. Crear Cliente
+    client_obj = Client(
+        client_identifier="metric-test-device",
+        client_secret_key="secret",
+        ip_address="10.0.0.2",
+        is_active=True,
+        created_at=datetime.now(timezone.utc),
+        description="Metric Test",
+    )
+    db_session.add(client_obj)
+    db_session.commit()
+
+    # 2. Insertar métrica antigua (hace 10 min)
+    old_metric = ServerMetric(
+        client_id=client_obj.id,
+        cpu_usage=11.1,
+        ram_usage=11.1,
+        disk_usage=11.1,
+        timestamp=datetime.now(timezone.utc) - timedelta(minutes=10),
+        net_sent=0,
+        net_recv=0,
+    )
+    db_session.add(old_metric)
+
+    # 3. Insertar métrica nueva (ahora)
+    new_metric = ServerMetric(
+        client_id=client_obj.id,
+        cpu_usage=99.9,
+        ram_usage=88.8,
+        disk_usage=77.7,
+        timestamp=datetime.now(timezone.utc),
+        net_sent=0,
+        net_recv=0,
+    )
+    db_session.add(new_metric)
+    db_session.commit()
+
+    # 4. Consultar Dashboard
+    response = admin_client.get("/api/v1/clients")
+    assert response.status_code == status.HTTP_200_OK
+
+    # 5. Verificar que los valores nuevos aparecen en el HTML
+    # El template usa "%.1f"|format(metric.cpu_usage) -> "99.9%"
+    assert "99.9%" in response.text
+    assert "88.8%" in response.text
+
+    # Verificar que NO aparece la vieja (11.1%)
+    assert "11.1%" not in response.text

@@ -1,16 +1,16 @@
 import math
 from typing import Annotated
-from datetime import datetime, timezone, UTC, timedelta
+from datetime import datetime, timezone, timedelta, UTC
 from fastapi import APIRouter, Depends, Query, Request, status, HTTPException, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.security import OAuth2PasswordBearer
 from fastapi.templating import Jinja2Templates
 import jwt
-from sqlalchemy import desc, func, select
-from sqlalchemy.orm import Session
+from sqlalchemy import and_, desc, func, select
+from sqlalchemy.orm import Session, joinedload, aliased
 
 # Import's Locales
-from models.clients import Client, ApprovedClient, ServerMetric
+from models.clients import Client, ApprovedClient, ServerMetric, DeviceCode
 from models.users import User
 from utils.auth import (
     create_access_token,
@@ -66,6 +66,23 @@ async def get_current_client(
     client = db.execute(select(Client).where(Client.id == client_id)).scalars().first()
     if client is None:
         raise credentials_exception
+
+    # Si el cliente no tiene descripción, intentamos recuperarla de ApprovedClient
+    if not client.description:
+        approved_client = (
+            db.execute(
+                select(ApprovedClient).where(
+                    ApprovedClient.ip_address == client.ip_address
+                )
+            )
+            .scalars()
+            .first()
+        )
+        if approved_client and approved_client.description:
+            client.description = approved_client.description
+            db.commit()
+            db.refresh(client)
+
     return client
 
 
@@ -92,27 +109,56 @@ def get_all_clients(
     limit = 20
     skip = (page - 1) * limit
 
-    total_clients = db.execute(select(func.count(Client.id))).scalar() or 0
-    total_pages = math.ceil(total_clients / limit) if total_clients > 0 else 1
+    # Subconsulta para obtener la métrica más reciente por cliente
+    latest_metrics_subquery = select(
+        ServerMetric,
+        func.row_number()
+        .over(
+            partition_by=ServerMetric.client_id, order_by=desc(ServerMetric.timestamp)
+        )
+        .label("rn"),
+    ).subquery()
+    # Usamos aliased para mapear la subconsulta a un objeto ServerMetric
+    MetricAlias = aliased(ServerMetric, latest_metrics_subquery)
 
-    clients = (
-        db.execute(select(Client).order_by(desc(Client.id)).offset(skip).limit(limit))
-        .scalars()
-        .all()
+    # Consulta principal que une Clientes con su última métrica
+    query = (
+        select(Client, MetricAlias)
+        .outerjoin(
+            MetricAlias,
+            and_(
+                Client.id == MetricAlias.client_id,
+                latest_metrics_subquery.c.rn == 1,
+            ),
+        )
+        .order_by(desc(Client.id))
+        .offset(skip)
+        .limit(limit)
     )
 
-    data = get_dashboard_stats(db)
+    results = db.execute(query).all()
+    clients_with_metrics = []
+    for client, metric in results:
+        # Asegurar que el timestamp tenga zona horaria para evitar errores en el template
+        if metric and metric.timestamp and metric.timestamp.tzinfo is None:
+            metric.timestamp = metric.timestamp.replace(tzinfo=UTC)
+        client.latest_metric = metric  # Ahora metric es un objeto ServerMetric o None
+        clients_with_metrics.append(client)
+
+    total_clients = db.execute(select(func.count(Client.id))).scalar() or 0
+    total_pages = math.ceil(total_clients / limit) if total_clients > 0 else 1
 
     return templates.TemplateResponse(
         request=request,
         name="dashboard/clients.html",
         context={
-            "clients": clients,
+            "clients": clients_with_metrics,
             "user": current_admin,
-            "data": data,
+            "data": get_dashboard_stats(db),
             "title": "Gestión de Dispositivos",
             "current_page": page,
             "total_pages": total_pages,
+            "now": datetime.now(UTC),
         },
     )
 
@@ -139,8 +185,20 @@ def get_approved_clients(
         .all()
     )
 
-    if approved_clients is None:
-        approved_clients = 0
+    # Para cada IP aprobada, buscamos si hay códigos de dispositivo pendientes de activar
+    if approved_clients:
+        for ac in approved_clients:
+            ac.pending_codes = (
+                db.execute(
+                    select(DeviceCode).where(
+                        DeviceCode.ip_address == ac.ip_address,
+                        DeviceCode.is_verified == False,
+                        DeviceCode.expires_at > datetime.now(UTC),
+                    )
+                )
+                .scalars()
+                .all()
+            )
 
     data = get_dashboard_stats(db)
 
@@ -236,6 +294,7 @@ def create_approved_client(
     response_class=HTMLResponse,
     status_code=status.HTTP_200_OK,
     include_in_schema=False,
+    name="get_client_details",
 )
 def get_client_details(
     request: Request,
@@ -265,6 +324,37 @@ def get_client_details(
             "data": data,
             "title": f"Detalles: {client.client_identifier}",
         },
+    )
+
+
+@router.post(
+    "/{client_id}/update",
+    status_code=status.HTTP_303_SEE_OTHER,
+    include_in_schema=False,
+)
+def update_client_description(
+    request: Request,
+    client_id: int,
+    description: Annotated[str, Form()],
+    db: Annotated[Session, Depends(get_db)],
+    admin_or_redirect: Annotated[User | RedirectResponse, Depends(get_current_admin)],
+):
+    """Actualiza manualmente la descripción de un cliente."""
+    if isinstance(admin_or_redirect, RedirectResponse):
+        return admin_or_redirect
+
+    client = db.get(Client, client_id)
+    if not client:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Cliente no encontrado"
+        )
+
+    client.description = description
+    db.commit()
+
+    return RedirectResponse(
+        url=request.url_for("get_client_details", client_id=client_id),
+        status_code=status.HTTP_303_SEE_OTHER,
     )
 
 
@@ -370,7 +460,11 @@ def receive_metrics(
 
     # 3. Calcular velocidad si existe una métrica anterior
     if last_metric and new_net_sent is not None and new_net_recv is not None:
-        time_delta = (current_timestamp - last_metric.timestamp).total_seconds()
+        last_ts = last_metric.timestamp
+        # Asegurar que last_ts tenga timezone para evitar error de sustracción
+        if last_ts.tzinfo is None:
+            last_ts = last_ts.replace(tzinfo=UTC)
+        time_delta = (current_timestamp - last_ts).total_seconds()
 
         if time_delta > 0:
             # Manejar reinicio de contadores (si el nuevo valor es menor)

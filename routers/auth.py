@@ -283,7 +283,11 @@ def device_activate_view(request: Request):
 
 # ----------------------------------------------------------------------
 # Device Flow: 4. Procesar Activación (Admin Only)
-@router.post("/device/activate", status_code=status.HTTP_303_SEE_OTHER)
+@router.post(
+    "/device/activate",
+    status_code=status.HTTP_303_SEE_OTHER,
+    name="device_activate_submit",
+)
 def device_activate_submit(
     request: Request,
     user_code: Annotated[str, Form()],
@@ -318,6 +322,18 @@ def device_activate_submit(
     if code_record.is_verified:
         return redirect_error("Este dispositivo ya fue verificado.")
 
+    # Buscar el ApprovedClient correspondiente para obtener la descripción
+    approved_client = (
+        db.execute(
+            select(ApprovedClient).where(
+                ApprovedClient.ip_address == code_record.ip_address
+            )
+        )
+        .scalars()
+        .first()
+    )
+    client_description = approved_client.description if approved_client else None
+
     # Crear Cliente Nuevo (Rotación de secretos por cada registro)
     new_client = Client(
         client_identifier=str(uuid.uuid4()),
@@ -325,15 +341,14 @@ def device_activate_submit(
         ip_address=code_record.ip_address,
         is_active=True,
         created_at=datetime.now(UTC),
+        description=client_description,
     )
     db.add(new_client)
-    db.commit()
-    db.refresh(new_client)
+    db.flush()  # Para obtener el ID del nuevo cliente antes de hacer commit
 
     # Actualizar DeviceCode para que el polling del dispositivo reciba éxito
     code_record.is_verified = True
     code_record.client_id = new_client.id
-    db.commit()
 
     # Redirección exitosa al Dashboard
     response = RedirectResponse(
@@ -343,4 +358,9 @@ def device_activate_submit(
         key="flash_message", value="Dispositivo autorizado exitosamente.", httponly=True
     )
     response.set_cookie(key="flash_type", value="green", httponly=True)
+
+    # Eliminar el registro de ApprovedClient ya que el cliente ha sido activado
+    if approved_client:
+        db.delete(approved_client)
+    db.commit()
     return response
