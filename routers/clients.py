@@ -1,8 +1,8 @@
 import math
 from typing import Annotated
 from datetime import datetime, timezone, UTC, timedelta
-from fastapi import APIRouter, Depends, Query, Request, status, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Depends, Query, Request, status, HTTPException, Form
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.security import OAuth2PasswordBearer
 from fastapi.templating import Jinja2Templates
 import jwt
@@ -78,13 +78,17 @@ async def get_current_client(
 def get_all_clients(
     request: Request,
     db: Annotated[Session, Depends(get_db)],
-    current_admin: Annotated[User, Depends(get_current_admin)],
+    admin_or_redirect: Annotated[User | RedirectResponse, Depends(get_current_admin)],
     page: Annotated[int, Query(ge=1, description="Número de página")] = 1,
 ):
     """
     Obtiene una lista paginada de todos los clientes registrados.
     Este endpoint es accesible solo para administradores.
     """
+    if isinstance(admin_or_redirect, RedirectResponse):
+        return admin_or_redirect
+    current_admin = admin_or_redirect
+
     limit = 20
     skip = (page - 1) * limit
 
@@ -114,6 +118,120 @@ def get_all_clients(
 
 
 @router.get(
+    "/approved",
+    response_class=HTMLResponse,
+    status_code=status.HTTP_200_OK,
+    name="get_approved_clients",
+)
+def get_approved_clients(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    admin_or_redirect: Annotated[User | RedirectResponse, Depends(get_current_admin)],
+):
+    """Lista todas las IPs aprobadas."""
+    if isinstance(admin_or_redirect, RedirectResponse):
+        return admin_or_redirect
+    current_admin = admin_or_redirect
+
+    approved_clients = (
+        db.execute(select(ApprovedClient).order_by(desc(ApprovedClient.id)))
+        .scalars()
+        .all()
+    )
+
+    if approved_clients is None:
+        approved_clients = 0
+
+    data = get_dashboard_stats(db)
+
+    # Recuperar mensajes flash de las cookies
+    flash_message = request.cookies.get("flash_message")
+    flash_type = request.cookies.get("flash_type")
+
+    response = templates.TemplateResponse(
+        request=request,
+        name="dashboard/approved_clients.html",
+        context={
+            "approved_clients": approved_clients,
+            "user": current_admin,
+            "data": data,
+            "title": "IPs Aprobadas",
+            "flash_message": flash_message,
+            "flash_type": flash_type,
+        },
+    )
+
+    # Limpiar cookies flash si existen para que el mensaje no persista
+    if flash_message:
+        response.delete_cookie("flash_message")
+        response.delete_cookie("flash_type")
+
+    return response
+
+
+@router.post(
+    "/approved",
+    status_code=status.HTTP_303_SEE_OTHER,
+    include_in_schema=False,
+    name="create_approved_client",
+)
+def create_approved_client(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    admin_or_redirect: Annotated[User | RedirectResponse, Depends(get_current_admin)],
+    ip_address: Annotated[str, Form()],
+    description: Annotated[str, Form()],
+):
+    """
+    Registra una dirección IP en la lista de clientes aprobados.
+    Solo accesible por administradores.
+    """
+    if isinstance(admin_or_redirect, RedirectResponse):
+        return admin_or_redirect
+    current_admin = admin_or_redirect
+
+    existing_ip = (
+        db.execute(
+            select(ApprovedClient).where(ApprovedClient.ip_address == ip_address)
+        )
+        .scalars()
+        .first()
+    )
+
+    if existing_ip:
+        response = RedirectResponse(
+            url=request.url_for("get_approved_clients"),
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+        response.set_cookie(
+            key="flash_message",
+            value="Error: Esta dirección IP ya se encuentra aprobada.",
+            httponly=True,
+        )
+        response.set_cookie(key="flash_type", value="red", httponly=True)
+        return response
+
+    new_client = ApprovedClient(
+        ip_address=ip_address,
+        description=description,
+    )
+
+    db.add(new_client)
+    db.commit()
+
+    response = RedirectResponse(
+        url=request.url_for("get_approved_clients"),
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+    response.set_cookie(
+        key="flash_message", value="IP aprobada correctamente.", httponly=True
+    )
+    response.set_cookie(key="flash_type", value="green", httponly=True)
+
+    return response
+
+
+@router.get(
     "/{client_id}",
     response_class=HTMLResponse,
     status_code=status.HTTP_200_OK,
@@ -123,10 +241,14 @@ def get_client_details(
     request: Request,
     client_id: int,
     db: Annotated[Session, Depends(get_db)],
-    current_admin: Annotated[User, Depends(get_current_admin)],
+    admin_or_redirect: Annotated[User | RedirectResponse, Depends(get_current_admin)],
 ):
     """Muestra la vista de detalles de un cliente específico."""
-    client = db.execute(select(Client).where(Client.id == client_id)).scalars().first()
+    if isinstance(admin_or_redirect, RedirectResponse):
+        return admin_or_redirect
+    current_admin = admin_or_redirect
+
+    client = db.get(Client, client_id)
     if not client:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Cliente no encontrado"
@@ -147,73 +269,21 @@ def get_client_details(
 
 
 @router.get(
-    "/approved",
-    response_model=list[ApprovedClientResponse],
-    status_code=status.HTTP_200_OK,
-)
-def get_approved_clients(
-    db: Annotated[Session, Depends(get_db)],
-    current_admin: Annotated[User, Depends(get_current_admin)],
-):
-    """Lista todas las IPs aprobadas."""
-    return db.execute(select(ApprovedClient)).scalars().all()
-
-
-@router.post(
-    "/approved",
-    response_model=ApprovedClientResponse,
-    status_code=status.HTTP_201_CREATED,
-    include_in_schema=False,
-)
-def create_approved_client(
-    client_data: ApprovedClientCreate,
-    db: Annotated[Session, Depends(get_db)],
-    current_admin: Annotated[User, Depends(get_current_admin)],
-):
-    """
-    Registra una dirección IP en la lista de clientes aprobados.
-    Solo accesible por administradores.
-    """
-    existing_ip = (
-        db.execute(
-            select(ApprovedClient).where(
-                ApprovedClient.ip_address == client_data.ip_address
-            )
-        )
-        .scalars()
-        .first()
-    )
-
-    if existing_ip:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Esta dirección IP ya se encuentra aprobada.",
-        )
-
-    new_client = ApprovedClient(
-        ip_address=client_data.ip_address,
-        description=client_data.description,
-    )
-
-    db.add(new_client)
-    db.commit()
-    db.refresh(new_client)
-
-    return new_client
-
-
-@router.get(
     "/{client_id}/metrics/json",
     status_code=status.HTTP_200_OK,
 )
 def get_client_metrics_json(
     client_id: int,
     db: Annotated[Session, Depends(get_db)],
-    current_admin: Annotated[User, Depends(get_current_admin)],
+    admin_or_redirect: Annotated[User | RedirectResponse, Depends(get_current_admin)],
     last_timestamp: Annotated[datetime | None, Query()] = None,
 ):
     """Devuelve las últimas 20 métricas de un cliente en formato JSON para polling."""
-    client_exists = db.execute(select(Client.id).where(Client.id == client_id)).scalar()
+    if isinstance(admin_or_redirect, RedirectResponse):
+        return admin_or_redirect
+    # current_admin = admin_or_redirect # No se usa, pero lo dejamos por consistencia
+
+    client_exists = db.get(Client, client_id)
     if not client_exists:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Cliente no encontrado"
@@ -245,6 +315,16 @@ def get_client_metrics_json(
                 "cpu": m.cpu_usage,
                 "ram": m.ram_usage,
                 "disk": m.disk_usage,
+                "net_speed_sent_kbytes_s": (
+                    round(m.net_speed_sent / 1024, 2)
+                    if m.net_speed_sent is not None
+                    else 0
+                ),
+                "net_speed_recv_kbytes_s": (
+                    round(m.net_speed_recv / 1024, 2)
+                    if m.net_speed_recv is not None
+                    else 0
+                ),
             }
         )
 
@@ -265,13 +345,51 @@ def receive_metrics(
             current_client.client_secret_key,
         )
     except Exception:
-        raise HTTPException(status_code=400, detail="Error de desencriptación")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Error de desencriptación"
+        )
+
+    # --- Lógica para calcular la velocidad de red (Delta) ---
+    # 1. Obtener la última métrica para este cliente
+    last_metric = (
+        db.execute(
+            select(ServerMetric)
+            .where(ServerMetric.client_id == current_client.id)
+            .order_by(desc(ServerMetric.timestamp))
+        )
+        .scalars()
+        .first()
+    )
+
+    # 2. Obtener valores acumulativos del payload
+    new_net_sent = decrypted_data.get("net_sent")
+    new_net_recv = decrypted_data.get("net_recv")
+    speed_sent_bps = 0.0
+    speed_recv_bps = 0.0
+    current_timestamp = datetime.now(UTC)
+
+    # 3. Calcular velocidad si existe una métrica anterior
+    if last_metric and new_net_sent is not None and new_net_recv is not None:
+        time_delta = (current_timestamp - last_metric.timestamp).total_seconds()
+
+        if time_delta > 0:
+            # Manejar reinicio de contadores (si el nuevo valor es menor)
+            if new_net_sent >= last_metric.net_sent:
+                speed_sent_bps = (new_net_sent - last_metric.net_sent) / time_delta
+
+            if new_net_recv >= last_metric.net_recv:
+                speed_recv_bps = (new_net_recv - last_metric.net_recv) / time_delta
 
     new_metric = ServerMetric(
         client_id=current_client.id,
         cpu_usage=decrypted_data.get("cpu"),
         ram_usage=decrypted_data.get("ram"),
         disk_usage=decrypted_data.get("disk"),
+        net_sent=new_net_sent,
+        net_recv=new_net_recv,
+        net_speed_sent=speed_sent_bps,
+        net_speed_recv=speed_recv_bps,
+        timestamp=current_timestamp,
     )
 
     db.add(new_metric)

@@ -24,6 +24,8 @@
                         <span class="w3-tag {{ 'w3-green' if client.is_active else 'w3-red' }} w3-round">
                             {{ "Activo" if client.is_active else "Inactivo" }}
                         </span>
+                        <span id="metricStatus" class="w3-tag w3-grey w3-round"
+                            style="margin-left:5px;">Sincronizando...</span>
                     </p>
                     <p><strong>Última Conexión:</strong> {{ client.last_seen.strftime('%Y-%m-%d %H:%M:%S') if
                         client.last_seen else "Nunca" }}</p>
@@ -34,6 +36,10 @@
             <h4>Métricas Recientes</h4>
             <div class="w3-container w3-padding-16">
                 <canvas id="metricsChart" style="width:100%;max-height:400px;"></canvas>
+            </div>
+            <h4>Velocidad de Red</h4>
+            <div class="w3-container w3-card w3-white w3-round w3-margin-bottom">
+                <canvas id="networkChart" style="width:100%;max-height:400px;"></canvas>
             </div>
             <div class="w3-responsive">
                 <table class="w3-table-all w3-small">
@@ -82,11 +88,22 @@
         {% endfor %}
     ];
 
-    const initialCpu = [{% for metric in client.metrics[-20:] %}{{ metric.cpu_usage }}, {% endfor %}];
-    const initialRam = [{% for metric in client.metrics[-20:] %}{{ metric.ram_usage }}, {% endfor %}];
-    const initialDisk = [{% for metric in client.metrics[-20:] %}{{ metric.disk_usage }}, {% endfor %}];
+    const initialCpu = [{% for metric in client.metrics[-20:] %}{ { metric.cpu_usage } }, {% endfor %}];
+    const initialRam = [{% for metric in client.metrics[-20:] %}{ { metric.ram_usage } }, {% endfor %}];
+    const initialDisk = [{% for metric in client.metrics[-20:] %}{ { metric.disk_usage } }, {% endfor %}];
+    // Nuevos arrays para datos de red (Conversión a KB/s)
+    const netSentData = [{% for m in client.metrics[-20:] %}{ { (m.net_speed_sent / 1024) | round(2) if m.net_speed_sent else 0 } }, {% endfor %}];
+    const netRecvData = [{% for m in client.metrics[-20:] %}{ { (m.net_speed_recv / 1024) | round(2) if m.net_speed_recv else 0 } }, {% endfor %}];
 
     // Llamada a la función definida en dashboard_clients.js
-    initClientMetrics({{ client.id }}, initialLabels, initialCpu, initialRam, initialDisk);
+    initClientMetrics(
+        {{ client.id }},
+        initialLabels,
+        initialCpu,
+        initialRam,
+        initialDisk,
+        netSentData,
+        netRecvData
+    );
 </script>
 {% endblock %}

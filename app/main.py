@@ -3,7 +3,7 @@
 from fastapi import FastAPI, Request, status
 
 # Para enviar respuestas HTML
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import sys
@@ -52,18 +52,13 @@ app.include_router(media.router, prefix="/api/v1/media", tags=["Media"])
 # Muestra la pagina principal del sitio
 @app.get(
     "/",
-    name="login",
-    response_class=HTMLResponse,
-    status_code=status.HTTP_200_OK,
+    response_class=RedirectResponse,
+    status_code=status.HTTP_307_TEMPORARY_REDIRECT,
     include_in_schema=False,
 )
 def inicio(request: Request):
-    """Renderiza la página inicial"""
-    return templates.TemplateResponse(
-        request=request,
-        name="login/login.html",
-        context={"title": "Iniciar Sesión"},
-    )
+    """Redirige a la página de login principal."""
+    return RedirectResponse(url=request.url_for("login"))
 
 
 # -----------------------------------------------
@@ -79,7 +74,7 @@ def forgot_password_view(request: Request):
     """Renderiza la página recuperar contraseña"""
     return templates.TemplateResponse(
         request=request,
-        name="login/forgot-password.html",
+        name="auth/forgot-password.html",
         context={"title": "Recupera tu contraseña"},
     )
 
@@ -97,6 +92,6 @@ def reset_password_view(request: Request):
     """Renderiza la página de resetear contraseña"""
     return templates.TemplateResponse(
         request=request,
-        name="login/reset-password.html",
+        name="auth/reset-password.html",
         context={"title": "Restablecer contraseña"},
     )

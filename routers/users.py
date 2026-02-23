@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 
 # Import's Locales
 from models.users import User, ApprovedUsers
+from fastapi.responses import RedirectResponse
 from utils.auth import (
     CurrentUser,
     generate_verification_token,
@@ -61,21 +62,28 @@ templates = Jinja2Templates(directory="templates")
 # ----------------------------------------------------------------------
 # Muestra mi usuario
 @router.get("/me", response_model=UserResponsePrivate, status_code=status.HTTP_200_OK)
-def get_current_user(current_user: CurrentUser):
+def get_current_user_endpoint(
+    user_or_redirect: CurrentUser,
+):
     """Obtiene el usuario actual autenticado."""
-    return current_user
+    if isinstance(user_or_redirect, RedirectResponse):
+        return user_or_redirect
+    return user_or_redirect
 
 
 # ----------------------------------------------------------------------
 # Edita el usuario actual
 @router.patch("/me", response_model=UserResponsePrivate, status_code=status.HTTP_200_OK)
 async def update_current_user_profile(
-    current_user: CurrentUser,
+    user_or_redirect: CurrentUser,
     db: Annotated[Session, Depends(get_db)],
     username: Annotated[str | None, Form()] = None,
     image_file: Annotated[UploadFile | None, File()] = None,
 ):
     """Permite al usuario autenticado actualizar su username y su foto de perfil."""
+    if isinstance(user_or_redirect, RedirectResponse):
+        return user_or_redirect
+    current_user = user_or_redirect
 
     if not username and not image_file:
         raise HTTPException(
@@ -137,11 +145,15 @@ async def update_current_user_profile(
 @router.patch("/me/password", status_code=status.HTTP_204_NO_CONTENT)
 def update_current_user_password(
     password_data: UserPasswordUpdate,
-    current_user: CurrentUser,
+    user_or_redirect: CurrentUser,
     db: Annotated[Session, Depends(get_db)],
 ):
     """Permite al usuario autenticado cambiar su propia contraseña."""
-    # 1. Verificar la contraseña actual
+    if isinstance(user_or_redirect, RedirectResponse):
+        return user_or_redirect
+    current_user = user_or_redirect
+
+    # 2. Verificar la contraseña actual
     if not verify_password(password_data.current_password, current_user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -229,8 +241,12 @@ def reset_password(
 def get_users(
     request: Request,
     db: Annotated[Session, Depends(get_db)],
-    user_admin: Annotated[User, Depends(get_current_admin)],
+    admin_or_redirect: Annotated[User | RedirectResponse, Depends(get_current_admin)],
 ):
+    if isinstance(admin_or_redirect, RedirectResponse):
+        return admin_or_redirect
+    user_admin = admin_or_redirect
+
     result = db.execute(select(User))
     users = result.scalars().all()
 
@@ -258,8 +274,11 @@ def get_users(
 )
 def get_approved_users(
     db: Annotated[Session, Depends(get_db)],
-    user_admin: Annotated[User, Depends(get_current_admin)],
+    admin_or_redirect: Annotated[User | RedirectResponse, Depends(get_current_admin)],
 ):
+    if isinstance(admin_or_redirect, RedirectResponse):
+        return admin_or_redirect
+
     result = db.execute(select(ApprovedUsers))
     users = result.scalars().all()
 
@@ -281,8 +300,11 @@ def get_approved_users(
 def create_approved_user(
     approved_email: str,
     db: Annotated[Session, Depends(get_db)],
-    user_admin: Annotated[User, Depends(get_current_admin)],
+    admin_or_redirect: Annotated[User | RedirectResponse, Depends(get_current_admin)],
 ):
+    if isinstance(admin_or_redirect, RedirectResponse):
+        return admin_or_redirect
+
     result = db.execute(
         select(ApprovedUsers).where(
             func.lower(ApprovedUsers.email) == approved_email.lower()
@@ -327,10 +349,13 @@ def create_approved_user(
 def create_user(
     user: UserCreate,
     db: Annotated[Session, Depends(get_db)],
-    user_admin: Annotated[User, Depends(get_current_admin)],
+    admin_or_redirect: Annotated[User | RedirectResponse, Depends(get_current_admin)],
     background_tasks: BackgroundTasks,
 ):
-    # Validaciones centralizadas
+    if isinstance(admin_or_redirect, RedirectResponse):
+        return admin_or_redirect
+
+    # Validaciones
     check_username_exists(db, user.username)
     check_email_exists(db, user.email)
     result = db.execute(
@@ -412,9 +437,12 @@ def verify_user_email(token: str, db: Annotated[Session, Depends(get_db)]):
 )
 def get_user(
     user_id: int,
-    user_admin: Annotated[User, Depends(get_current_admin)],
     db: Annotated[Session, Depends(get_db)],
+    admin_or_redirect: Annotated[User | RedirectResponse, Depends(get_current_admin)],
 ):
+    if isinstance(admin_or_redirect, RedirectResponse):
+        return admin_or_redirect
+
     result = db.execute(select(User).where(User.id == user_id))
     exists_user = result.scalars().first()
 
@@ -437,8 +465,12 @@ def update_user_role(
     user_id: int,
     role_data: UserRoleUpdate,
     db: Annotated[Session, Depends(get_db)],
-    current_admin: User = Depends(get_current_admin),
+    admin_or_redirect: Annotated[User | RedirectResponse, Depends(get_current_admin)],
 ):
+    if isinstance(admin_or_redirect, RedirectResponse):
+        return admin_or_redirect
+    current_admin = admin_or_redirect
+
     if user_id == current_admin.id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -472,8 +504,12 @@ def update_user_partial(
     user_id: int,
     user_data: UserUpdate,
     db: Annotated[Session, Depends(get_db)],
-    current_admin: User = Depends(get_current_admin),
+    admin_or_redirect: Annotated[User | RedirectResponse, Depends(get_current_admin)],
 ):
+    if isinstance(admin_or_redirect, RedirectResponse):
+        return admin_or_redirect
+    # current_admin = admin_or_redirect # No se usa
+
     result = db.execute(select(User).where(User.id == user_id))
     user = result.scalars().first()
 
@@ -508,9 +544,13 @@ def update_user_partial(
 def delete_user(
     user_id: int,
     db: Annotated[Session, Depends(get_db)],
-    current_admin: User = Depends(get_current_admin),
+    admin_or_redirect: Annotated[User | RedirectResponse, Depends(get_current_admin)],
 ):
-    # Si se llega acá es por que es user Admin
+    if isinstance(admin_or_redirect, RedirectResponse):
+        return admin_or_redirect
+    current_admin = admin_or_redirect
+
+    # Si se llega acá es porque es user Admin
     result = db.execute(select(User).where(User.id == user_id))
     user = result.scalars().first()
     if not user:

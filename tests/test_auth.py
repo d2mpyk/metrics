@@ -1,5 +1,9 @@
 # s:\WISE\Management\SERVER\tests\test_auth.py
+from datetime import datetime, timedelta, timezone
+import secrets
 from fastapi import status
+from sqlalchemy import select
+from models.clients import ApprovedClient, DeviceCode
 
 
 def test_login_success_returns_token_and_cookie(client, test_user):
@@ -100,3 +104,57 @@ def test_logout_clears_cookie(client, test_user):
     assert set_cookie is not None
     # Generalmente se borra seteando valor vacío o Max-Age=0
     assert 'access_token=""' in set_cookie or "Max-Age=0" in set_cookie
+
+
+def test_device_activation_flow_redirects(client, admin_user, db_session):
+    """
+    Verifica que el flujo de activación:
+    1. Redirija con error si el código es inválido.
+    2. Redirija con éxito y cookies flash si el código es válido.
+    """
+    # 1. Login Admin
+    login_payload = {
+        "username": admin_user["email"],
+        "password": admin_user["password"],
+    }
+    client.post("/api/v1/auth/token", data=login_payload)
+
+    # 2. Caso Error: Código Inválido
+    resp_invalid = client.post(
+        "/api/v1/auth/device/activate",
+        data={"user_code": "INVALID-CODE"},
+        follow_redirects=False,
+    )
+    assert resp_invalid.status_code == status.HTTP_303_SEE_OTHER
+    # Verifica que redirige a la misma vista de activación
+    assert resp_invalid.headers["location"].endswith("/device/activate")
+    assert "flash_message" in resp_invalid.cookies
+    assert resp_invalid.cookies["flash_type"] == "red"
+
+    # 3. Caso Éxito: Preparar datos (IP aprobada y código generado)
+    # Nota: 'testclient' es el host por defecto de TestClient
+    db_session.add(ApprovedClient(ip_address="testclient", description="Test Auth"))
+
+    user_code = "AAAA-BBBB"
+    device_code = secrets.token_urlsafe(32)
+    db_session.add(
+        DeviceCode(
+            device_code=device_code,
+            user_code="AAAABBBB",  # Normalizado en DB
+            ip_address="testclient",
+            expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+            is_verified=False,
+        )
+    )
+    db_session.commit()
+
+    # 4. Activar
+    resp_success = client.post(
+        "/api/v1/auth/device/activate",
+        data={"user_code": user_code},  # Enviamos con guión
+        follow_redirects=False,
+    )
+    assert resp_success.status_code == status.HTTP_303_SEE_OTHER
+    assert resp_success.headers["location"] == "/api/v1/dashboard"
+    assert "flash_message" in resp_success.cookies
+    assert resp_success.cookies["flash_type"] == "green"

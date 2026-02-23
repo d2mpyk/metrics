@@ -29,6 +29,31 @@ templates = Jinja2Templates(directory="templates")
 
 
 # ----------------------------------------------------------------------
+# Vista de Login
+@router.get("/login", response_class=HTMLResponse, name="login")
+def login_view(request: Request):
+    # Recuperar mensajes flash de las cookies
+    flash_message = request.cookies.get("flash_message")
+    flash_type = request.cookies.get("flash_type")
+
+    response = templates.TemplateResponse(
+        request=request,
+        name="auth/login.html",
+        context={
+            "flash_message": flash_message,
+            "flash_type": flash_type,
+        },
+    )
+
+    # Limpiar cookies flash si existen
+    if flash_message:
+        response.delete_cookie("flash_message")
+        response.delete_cookie("flash_type")
+
+    return response
+
+
+# ----------------------------------------------------------------------
 # Respuesta de Token
 @router.post(
     "/token",
@@ -235,23 +260,48 @@ def device_access_token(
     "/device/activate", response_class=HTMLResponse, name="device_activate_view"
 )
 def device_activate_view(request: Request):
-    return templates.TemplateResponse(
+    # Recuperar mensajes flash de las cookies
+    flash_message = request.cookies.get("flash_message")
+    flash_type = request.cookies.get("flash_type")
+
+    response = templates.TemplateResponse(
         request=request,
         name="device_activate.html",
-        context={"title": "Activar Dispositivo"},
+        context={
+            "title": "Activar Dispositivo",
+            "flash_message": flash_message,
+            "flash_type": flash_type,
+        },
     )
+    # Limpiar cookies flash si existen
+    if flash_message:
+        response.delete_cookie("flash_message")
+        response.delete_cookie("flash_type")
+
+    return response
 
 
 # ----------------------------------------------------------------------
 # Device Flow: 4. Procesar Activación (Admin Only)
-@router.post("/device/activate", status_code=status.HTTP_200_OK)
+@router.post("/device/activate", status_code=status.HTTP_303_SEE_OTHER)
 def device_activate_submit(
+    request: Request,
     user_code: Annotated[str, Form()],
     db: Annotated[Session, Depends(get_db)],
     current_admin: User = Depends(get_current_admin),
 ):
-    # Normalizar input
-    user_code = user_code.strip().upper()
+    # Normalizar input (eliminar guiones si el usuario los envió)
+    user_code = user_code.strip().upper().replace("-", "")
+
+    # Helper para redirección con error
+    def redirect_error(msg):
+        resp = RedirectResponse(
+            url=request.url_for("device_activate_view"),
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+        resp.set_cookie(key="flash_message", value=msg, httponly=True)
+        resp.set_cookie(key="flash_type", value="red", httponly=True)
+        return resp
 
     code_record = (
         db.execute(select(DeviceCode).where(DeviceCode.user_code == user_code))
@@ -260,19 +310,13 @@ def device_activate_submit(
     )
 
     if not code_record:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Código inválido",
-        )
+        return redirect_error("Código inválido")
 
     if datetime.now(UTC) > code_record.expires_at.replace(tzinfo=UTC):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Código expirado",
-        )
+        return redirect_error("Código expirado")
 
     if code_record.is_verified:
-        return {"message": "Este dispositivo ya fue verificado."}
+        return redirect_error("Este dispositivo ya fue verificado.")
 
     # Crear Cliente Nuevo (Rotación de secretos por cada registro)
     new_client = Client(
@@ -291,6 +335,12 @@ def device_activate_submit(
     code_record.client_id = new_client.id
     db.commit()
 
-    return {
-        "message": "Dispositivo autorizado exitosamente. El dispositivo ahora recibirá su token."
-    }
+    # Redirección exitosa al Dashboard
+    response = RedirectResponse(
+        url="/api/v1/dashboard", status_code=status.HTTP_303_SEE_OTHER
+    )
+    response.set_cookie(
+        key="flash_message", value="Dispositivo autorizado exitosamente.", httponly=True
+    )
+    response.set_cookie(key="flash_type", value="green", httponly=True)
+    return response

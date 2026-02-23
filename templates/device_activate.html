@@ -1,6 +1,15 @@
-{% extends "login/base_login.html" %}
+{% extends "auth/base_login.html" %}
 
 {% block content %}
+<!-- Flash Message -->
+{% if flash_message %}
+<div class="w3-panel w3-{{ flash_type or 'blue' }} w3-display-container w3-round w3-animate-opacity">
+    <span onclick="this.parentElement.style.display='none'"
+        class="w3-button w3-large w3-display-topright">&times;</span>
+    <p>{{ flash_message }}</p>
+</div>
+{% endif %}
+
 <div class="w3-container w3-center w3-margin-bottom">
     <h3>Conectar Dispositivo</h3>
     <p>Ingresa el código que aparece en la pantalla de tu dispositivo.</p>
@@ -18,32 +27,8 @@
 </form>
 
 <div class="w3-center w3-small w3-margin-top">
-    <a href="/" class="w3-text-blue">Volver al inicio</a>
+    <a href="/api/v1/auth/login" class="w3-text-blue">Volver al inicio</a>
 </div>
 
-<script>
-    document.getElementById('deviceForm').addEventListener('submit', async function (e) {
-        e.preventDefault();
-        const formData = new FormData(this);
-        try {
-            const response = await fetch(this.action, {
-                method: 'POST',
-                body: formData
-            });
-            const data = await response.json();
-
-            if (response.ok) {
-                alert(data.message);
-                window.location.href = "/";
-            } else if (response.status === 401 || response.status === 403) {
-                alert("Debes iniciar sesión como administrador para autorizar dispositivos.");
-                window.location.href = "/"; // Redirigir al login
-            } else {
-                alert("Error: " + (data.detail || "Código inválido o expirado"));
-            }
-        } catch (err) {
-            alert("Error de conexión con el servidor");
-        }
-    });
-</script>
+<script src="{{ url_for('static', path='js/device_activate.js') }}"></script>
 {% endblock %}

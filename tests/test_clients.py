@@ -1,8 +1,4 @@
-import base64
-import hashlib
-import json
-import jwt
-import os
+import base64, hashlib, json, jwt, os, pytest, time
 from unittest.mock import patch
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives import padding
@@ -13,7 +9,6 @@ from models.clients import Client, ServerMetric
 from utils.auth import create_access_token
 from utils.crypto import decrypt_payload
 from utils.config import get_settings
-import pytest
 from datetime import datetime, timedelta, timezone
 
 
@@ -75,55 +70,83 @@ def test_decrypt_payload_wrong_key():
 # -----------------------------------------------------------------------------
 
 
-def test_receive_metrics_success(client, db_session):
-    """Prueba el flujo completo de envío de métricas."""
+def test_receive_metrics_and_delta_calculation(client, db_session):
+    """Prueba el envío de métricas y la correcta calculación de la velocidad de red (delta)."""
     # 1. Crear un cliente en la DB
     secret_key = "device_secret_key"
-    new_client = Client(
+    test_client = Client(
         client_identifier="device-001",
         client_secret_key=secret_key,
         ip_address="127.0.0.1",
         is_active=True,
         created_at=datetime.now(timezone.utc),
     )
-    db_session.add(new_client)
+    db_session.add(test_client)
     db_session.commit()
-    db_session.refresh(new_client)
+    db_session.refresh(test_client)
 
     # 2. Generar Token JWT para el dispositivo
     token = create_access_token(
         data={
-            "sub": new_client.client_identifier,
+            "sub": test_client.client_identifier,
             "role": "device",
-            "client_id": new_client.id,
+            "client_id": test_client.id,
         }
     )
 
-    # 3. Preparar Payload Encriptado
-    metrics_data = {"cpu": 55.5, "ram": 40.0, "disk": 10.0}
-    payload = encrypt_helper(metrics_data, secret_key)
-
-    # 4. Enviar Request
-    response = client.post(
+    # 3. Enviar la primera métrica
+    metrics_data_1 = {
+        "cpu": 10.0,
+        "ram": 20.0,
+        "disk": 5.0,
+        "net_sent": 10240,  # 10 KB
+        "net_recv": 20480,  # 20 KB
+    }
+    payload_1 = encrypt_helper(metrics_data_1, secret_key)
+    response_1 = client.post(
         "/api/v1/clients/metrics",
-        json=payload,
+        json=payload_1,
         headers={"Authorization": f"Bearer {token}"},
     )
+    assert response_1.status_code == status.HTTP_201_CREATED
 
-    assert response.status_code == status.HTTP_201_CREATED
-    assert response.json() == {"status": "ok"}
+    # Verificar la primera métrica en la DB (la velocidad debe ser 0)
+    metric_1 = db_session.execute(
+        select(ServerMetric).where(ServerMetric.client_id == test_client.id)
+    ).scalar_one()
+    assert metric_1.net_sent == 10240
+    assert metric_1.net_speed_sent == 0.0
+    assert metric_1.net_speed_recv == 0.0
 
-    # 5. Verificar en DB
-    metric = (
-        db_session.execute(
-            select(ServerMetric).where(ServerMetric.client_id == new_client.id)
-        )
-        .scalars()
-        .first()
+    # Esperar para simular un intervalo de tiempo
+    time.sleep(1.1)
+
+    # 4. Enviar la segunda métrica
+    metrics_data_2 = {
+        "cpu": 15.0,
+        "ram": 25.0,
+        "disk": 6.0,
+        "net_sent": 20480,  # +10 KB
+        "net_recv": 40960,  # +20 KB
+    }
+    payload_2 = encrypt_helper(metrics_data_2, secret_key)
+    response_2 = client.post(
+        "/api/v1/clients/metrics",
+        json=payload_2,
+        headers={"Authorization": f"Bearer {token}"},
     )
+    assert response_2.status_code == status.HTTP_201_CREATED
 
-    assert metric is not None
-    assert metric.cpu_usage == 55.5
+    # 5. Verificar la segunda métrica en la DB
+    metric_2 = db_session.get(ServerMetric, metric_1.id + 1)
+    assert metric_2.net_sent == 20480
+
+    time_delta = (metric_2.timestamp - metric_1.timestamp).total_seconds()
+    expected_speed_sent = (20480 - 10240) / time_delta  # Bytes/sec
+    expected_speed_recv = (40960 - 20480) / time_delta  # Bytes/sec
+
+    assert metric_2.net_speed_sent == pytest.approx(expected_speed_sent, rel=1e-2)
+    assert metric_2.net_speed_recv == pytest.approx(expected_speed_recv, rel=1e-2)
 
 
 def test_receive_metrics_with_expired_token_manual_check(client, db_session):
@@ -186,14 +209,14 @@ def test_full_device_flow_integration(client, admin_user):
         "ip_address": "testclient",
         "description": "Integration Test Device",
     }
-    resp_approve = client.post("/api/v1/clients/approved", json=approved_payload)
-    assert resp_approve.status_code == status.HTTP_201_CREATED
-
-    # Verificar que la respuesta ahora incluye id y created_at, como define ApprovedClientResponse
-    data_approve = resp_approve.json()
-    assert "id" in data_approve
-    assert "created_at" in data_approve
-    assert data_approve["ip_address"] == "testclient"
+    # Con el patrón PRG, enviamos datos de formulario y esperamos una redirección.
+    resp_approve = client.post(
+        "/api/v1/clients/approved", data=approved_payload, follow_redirects=False
+    )
+    assert resp_approve.status_code == status.HTTP_303_SEE_OTHER
+    assert resp_approve.headers["location"] == "/api/v1/clients/approved"
+    # Verificar que se estableció el mensaje flash
+    assert "flash_message" in resp_approve.cookies
 
     # 3. Dispositivo solicita código (Simulamos ser dispositivo limpiando cookies)
     client.cookies.clear()
@@ -209,9 +232,14 @@ def test_full_device_flow_integration(client, admin_user):
     client.post("/api/v1/auth/token", data=login_payload)
 
     resp_activate = client.post(
-        "/api/v1/auth/device/activate", data={"user_code": user_code}
+        "/api/v1/auth/device/activate",
+        data={"user_code": user_code},
+        follow_redirects=False,
     )
-    assert resp_activate.status_code == status.HTTP_200_OK
+    assert resp_activate.status_code == status.HTTP_303_SEE_OTHER
+    assert resp_activate.headers["location"] == "/api/v1/dashboard"
+    # Verificar cookies flash
+    assert "flash_message" in resp_activate.cookies
 
     # 5. Dispositivo obtiene token (Polling)
     client.cookies.clear()

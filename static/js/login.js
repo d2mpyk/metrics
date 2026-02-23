@@ -34,9 +34,9 @@ document.addEventListener("DOMContentLoaded", function () {
             }
 
             const data = await tokenResponse.json();
-            const accessToken = data.access_token;
-            const tokenType = data.token_type;
-            console.log(`Token Recibido: ${accessToken}`)
+            //const accessToken = data.access_token;
+            //const tokenType = data.token_type;
+            //console.log(`Token Recibido: ${accessToken}`)
 
             // 3️⃣ Informar Acceso
             //alert("Login successful!");

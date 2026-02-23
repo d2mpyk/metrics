@@ -2,14 +2,20 @@ from datetime import datetime, timedelta
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from models.users import User
-from models.clients import Client
+from models.clients import Client, ApprovedClient
+
+
 
 
 class DashboardStatsCache:
     def __init__(self, ttl_seconds: int = 300):
         self.ttl = ttl_seconds
         self.last_updated = None
-        self.data = {"total_users": 0, "total_clients": 0}
+        self.data = {
+            "total_users": 0, 
+            "total_clients": 0,
+            "total_pending": 0,
+        }
 
     def get_stats(self, db: Session):
         now = datetime.now()
@@ -23,6 +29,10 @@ class DashboardStatsCache:
             self.data["total_clients"] = (
                 db.execute(select(func.count(Client.id))).scalar() or 0
             )
+            approved = (
+                db.execute(select(func.count(ApprovedClient.id))).scalar() or 0
+            )
+            self.data["total_pending"] = approved - self.data["total_clients"]
             self.last_updated = now
 
         return self.data.copy()

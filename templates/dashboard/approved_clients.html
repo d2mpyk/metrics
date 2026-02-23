@@ -2,63 +2,48 @@
 
 {% block content %}
 <div class="w3-container">
-    <h5>Lista de Dispositivos Registrados</h5>
+    
+    <!-- Flash Message -->
+    {% if flash_message %}
+    <div class="w3-panel w3-{{ flash_type or 'blue' }} w3-display-container w3-round w3-animate-opacity">
+        <span onclick="this.parentElement.style.display='none'"
+            class="w3-button w3-large w3-display-topright">&times;</span>
+        <p>{{ flash_message }}</p>
+    </div>
+    {% endif %}
+
+    <h5>Lista de IPs Aprobadas (Pendientes de Registro)</h5>
     <div class="w3-responsive">
         <table class="w3-table-all w3-hoverable">
             <thead>
-                <tr class="w3-teal">
+                <tr class="w3-orange w3-text-white">
                     <th>ID</th>
-                    <th>Identificador</th>
                     <th>IP</th>
                     <th>Descripción</th>
-                    <th>Estado</th>
-                    <th>Última Conexión</th>
-                    <th>Creado</th>
+                    <th>Fecha de Aprobación</th>
                 </tr>
             </thead>
             <tbody>
-                {% for c in clients %}
-                <tr class="w3-hover-teal w3-hover-text-white" style="cursor: pointer;"
-                    onclick="window.location.href='/api/v1/clients/{{ c.id }}'">
+                {% for c in approved_clients %}
+                <tr class="w3-text-black w3-hover-orange w3-hover-text-white">
                     <td>{{ c.id }}</td>
-                    <td>{{ c.client_identifier }}</td>
                     <td>{{ c.ip_address }}</td>
                     <td>{{ c.description }}</td>
-                    <td>{{ "Activo" if c.is_active else "Inactivo" }}</td>
-                    <td>{{ c.last_seen.strftime('%Y-%m-%d %H:%M') if c.last_seen else "Nunca" }}</td>
-                    <td>{{ c.created_at.strftime('%Y-%m-%d') }}</td>
+                    <td>{{ c.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="7" class="w3-center">No hay dispositivos registrados.</td>
+                    <td colspan="4" class="w3-center">No hay IPs aprobadas pendientes.</td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
-    <!-- Controles de Paginación -->
-    <div class="w3-center w3-padding-32">
-        <div class="w3-bar">
-            {% if current_page > 1 %}
-            <a href="?page={{ current_page - 1 }}" class="w3-button w3-hover-teal">&laquo; Anterior</a>
-            {% else %}
-            <a class="w3-button w3-disabled">&laquo; Anterior</a>
-            {% endif %}
 
-            <span class="w3-button w3-teal w3-hover-white w3-hover-text-teal">Página {{ current_page }} de {{
-                total_pages }}</span>
-
-            {% if current_page < total_pages %} <a href="?page={{ current_page + 1 }}" class="w3-button w3-hover-teal">
-                Siguiente &raquo;</a>
-                {% else %}
-                <a class="w3-button w3-disabled">Siguiente &raquo;</a>
-                {% endif %}
-        </div>
-    </div>
-
-    <!-- Botón Flotante -->
+    <!-- Botón Flotante para agregar -->
     <button class="w3-button w3-xlarge w3-circle w3-blue w3-hover-white w3-hover-text-blue w3-card-4 w3-animate-zoom"
-        style="position:fixed;bottom:30px;right:30px;z-index:100;" id="btnOpenModal" title="Registrar IP Aprobada">
+        style="position:fixed;bottom:30px;right:30px;z-index:100;"
+        onclick="document.getElementById('modalApproved').style.display='block'" title="Registrar IP Aprobada">
         <i class="fa fa-plus"></i>
     </button>
 
@@ -66,11 +51,11 @@
     <div id="modalApproved" class="w3-modal">
         <div class="w3-modal-content w3-card-4 w3-animate-zoom w3-round-large" style="max-width:500px">
             <header class="w3-container w3-blue w3-round-top-large">
-                <span id="btnCloseModal"
+                <span onclick="document.getElementById('modalApproved').style.display='none'"
                     class="w3-button w3-red w3-hover-white w3-hover-text-red w3-display-topright"><strong>&times;</strong></span>
                 <h3>Registrar Dispositivo</h3>
             </header>
-            <form class="w3-container w3-padding-16" id="formApproved">
+            <form class="w3-container w3-padding-16" method="POST" action="{{ url_for('create_approved_client') }}">
                 <label>Dirección IP</label>
                 <input class="w3-input w3-border w3-round w3-margin-bottom" type="text" name="ip_address"
                     placeholder="Ej: 192.168.1.100" required>
@@ -84,6 +69,5 @@
     </div>
 
     <script src="{{ url_for('static', path='js/clients.js') }}"></script>
-
 </div>
 {% endblock %}

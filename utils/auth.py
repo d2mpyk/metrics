@@ -1,6 +1,7 @@
 from datetime import UTC, datetime, timedelta
 from fastapi import Depends, Request, status, HTTPException
 from fastapi.templating import Jinja2Templates
+from fastapi.responses import RedirectResponse
 from typing import Annotated
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -129,41 +130,52 @@ def get_current_user(
     request: Request,
     db: Annotated[Session, Depends(get_db)],
     token_: Annotated[str | None, Depends(oauth2_scheme)],
-) -> User:
-    """Obtiene el usuario actual autenticado desde la cookie."""
-
-    response_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Token Inválido o Expirado.",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
+) -> User | RedirectResponse:
+    """
+    Obtiene el usuario actual autenticado desde la cookie.
+    Si el token es inválido o ha expirado, retorna un RedirectResponse a la página de login.
+    """
 
     token = token_
-
-    # 2. Si no hay header (token_ is None), intenta obtenerlo desde la cookie
     if not token:
         token = request.cookies.get("access_token")
 
     if not token:
-        raise response_exception
+        # No hay token, no se puede continuar.
+        return RedirectResponse(url="/api/v1/auth/login", status_code=status.HTTP_303_SEE_OTHER)
 
-    # 2. Decodifica el Token
-    username = verify_access_token(token)
-    if username is None:
-        raise response_exception
+    try:
+        payload = jwt.decode(
+            token,
+            settings.SECRET_KEY.get_secret_value(),
+            algorithms=[settings.ALGORITHM.get_secret_value()],
+            options={"require": ["sub", "exp", "iat"]},
+        )
+        username = payload.get("sub")
+        if not username:
+            raise jwt.InvalidTokenError
 
-    result = db.execute(select(User).where(User.username == username))
-    user = result.scalars().first()
+        user = db.execute(select(User).where(User.username == username)).scalars().first()
+        if not user or not user.is_active:
+            raise jwt.InvalidTokenError
 
-    # 3. Validar username en token y existencia del usuario
-    if user is None:
-        raise response_exception
+        return user
 
-    # 4. Validar que esté activo (Buena práctica en OAuth2)
-    if not user.is_active:
-        raise response_exception
+    except jwt.ExpiredSignatureError:
+        # Caso específico: el token ha expirado.
+        response = RedirectResponse(url="/api/v1/auth/login", status_code=status.HTTP_303_SEE_OTHER)
+        response.set_cookie(key="flash_message", value="Su sesión ha expirado. Por favor, inicie sesión de nuevo.", httponly=True)
+        response.set_cookie(key="flash_type", value="orange", httponly=True)
+        response.delete_cookie("access_token")
+        return response
 
-    return user
+    except jwt.InvalidTokenError:
+        # Caso genérico: token inválido, manipulado, o usuario no encontrado.
+        response = RedirectResponse(url="/api/v1/auth/login", status_code=status.HTTP_303_SEE_OTHER)
+        response.set_cookie(key="flash_message", value="Error de autenticación. Por favor, inicie sesión.", httponly=True)
+        response.set_cookie(key="flash_type", value="red", httponly=True)
+        response.delete_cookie("access_token")
+        return response
 
 
 # ----------------------------------------------------------------------
@@ -173,14 +185,17 @@ CurrentUser = Annotated[User, Depends(get_current_user)]
 
 # ----------------------------------------------------------------------
 # Verifica si el usuario es admin
-def get_current_admin(current_user: CurrentUser) -> User:
+def get_current_admin(current_user_or_redirect: CurrentUser) -> User | RedirectResponse:
     """Verifica que el usuario actual tenga rol de administrador."""
-    if current_user.role != "admin":
+    if isinstance(current_user_or_redirect, RedirectResponse):
+        return current_user_or_redirect
+
+    if current_user_or_redirect.role != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Acceso denegado",
         )
-    return current_user
+    return current_user_or_redirect
 
 
 # ----------------------------------------------------------------------

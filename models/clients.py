@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, UTC
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from utils.database import Base
@@ -72,6 +72,10 @@ class ServerMetric(Base):
     cpu_usage: Mapped[float] = mapped_column(Float, nullable=False)
     ram_usage: Mapped[float] = mapped_column(Float, nullable=False)
     disk_usage: Mapped[float] = mapped_column(Float, nullable=False)
+    net_sent: Mapped[int] = mapped_column(BigInteger)
+    net_recv: Mapped[int] = mapped_column(BigInteger)
+    net_speed_sent: Mapped[float] = mapped_column(Float, nullable=True)
+    net_speed_recv: Mapped[float] = mapped_column(Float, nullable=True)
     timestamp: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),

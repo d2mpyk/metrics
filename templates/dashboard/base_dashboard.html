@@ -49,6 +49,7 @@
           class="fa fa-tachometer fa-fw"></i>  Overview</a>
       <a href="/api/v1/users" class="w3-bar-item w3-button w3-padding"><i class="fa fa-users fa-fw"></i>  Users</a>
       <a href="/api/v1/clients" class="w3-bar-item w3-button w3-padding"><i class="fa fa-server fa-fw"></i>  Devices</a>
+      <a href="/api/v1/clients/approved" class="w3-bar-item w3-button w3-padding"><i class="fa fa-hand-paper-o fa-fw"></i>  Pending</a>
       <a href="#" class="w3-bar-item w3-button w3-padding"><i class="fa fa-cog fa-fw"></i>  Settings</a><br><br>
     </div>
   </nav>
@@ -67,10 +68,10 @@
 
     <div class="w3-row-padding w3-margin-bottom">
       <div class="w3-quarter">
-        <div class="w3-container w3-round-large w3-orange w3-text-white w3-padding-16">
+        <div class="w3-container w3-round-large w3-blue w3-text-white w3-padding-16">
           <div class="w3-left"><i class="fa fa-users w3-xxxlarge"></i></div>
           <div class="w3-right">
-            <a class="w3-button w3-round-large w3-hover-white w3-hover-text-orange" href="/api/v1/users">
+            <a class="w3-button w3-round-large w3-hover-white w3-hover-text-blue" href="/api/v1/users">
               <h3>{{ data.total_users }}</h3>
             </a>
           </div>
@@ -80,10 +81,10 @@
         </div>
       </div>
       <div class="w3-quarter">
-        <div class="w3-container w3-round-large w3-red w3-padding-16">
+        <div class="w3-container w3-round-large w3-teal w3-padding-16">
           <div class="w3-left"><i class="fa fa-server w3-xxxlarge"></i></div>
           <div class="w3-right">
-            <a class="w3-button w3-round-large w3-hover-white w3-hover-text-red" href="/api/v1/clients">
+            <a class="w3-button w3-round-large w3-hover-white w3-hover-text-teal" href="/api/v1/clients">
               <h3>{{ data.total_clients }}</h3>
             </a>
           </div>
@@ -93,20 +94,23 @@
         </div>
       </div>
       <div class="w3-quarter">
-        <div class="w3-container w3-round-large w3-blue w3-padding-16">
-          <div class="w3-left"><i class="fa fa-eye w3-xxxlarge"></i></div>
-          <div class="w3-button w3-round-large w3-hover-white w3-hover-text-blue w3-right">
-            <h3>99</h3>
+        <div class="w3-container w3-round-large w3-orange w3-padding-16">
+          <div class="w3-left w3-text-white"><i class="fa fa-hand-paper-o w3-xxxlarge"></i></div>
+          <div class="w3-right">
+            <a class="w3-button w3-round-large w3-text-white w3-hover-white w3-hover-text-orange w3-right"
+              href="/api/v1/clients/approved">
+              <h3>{{ data.total_pending }}</h3>
+            </a>
           </div>
-          <div class="w3-clear">
-            <h4>Views</h4>
+          <div class="w3-clear w3-text-white">
+            <h4>Pending</h4>
           </div>
         </div>
       </div>
       <div class="w3-quarter">
-        <div class="w3-container w3-round-large w3-teal w3-padding-16">
+        <div class="w3-container w3-round-large w3-red w3-padding-16">
           <div class="w3-left"><i class="fa fa-share-alt w3-xxxlarge"></i></div>
-          <div class="w3-button w3-round-large w3-hover-white w3-hover-text-teal w3-right">
+          <div class="w3-button w3-round-large w3-hover-white w3-hover-text-red w3-right">
             <h3>23</h3>
           </div>
           <div class="w3-clear">
