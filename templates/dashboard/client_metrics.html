@@ -1,0 +1,58 @@
+{% extends "dashboard/base_dashboard.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="w3-container w3-padding-32">
+    <h2 class="w3-xlarge w3-text-blue-grey"><b><i class="fa fa-bar-chart"></i> {{ title }}</b></h2>
+    <p>Métricas en tiempo real para el dispositivo <strong>{{ client.description or client.client_identifier }}</strong>
+        (IP: {{ client.ip_address }})</p>
+</div>
+
+<div class="w3-bar w3-white w3-round w3-card-4 w3-margin-bottom w3-padding">
+    <span class="w3-bar-item w3-text-grey"><b>Rango de Tiempo:</b></span>
+    <button class="w3-bar-item w3-button w3-round w3-blue time-range-btn" onclick="changeTimeRange('live', this)">En Vivo</button>
+    <button class="w3-bar-item w3-button w3-round w3-white time-range-btn" onclick="changeTimeRange('day', this)">Día</button>
+    <button class="w3-bar-item w3-button w3-round w3-white time-range-btn" onclick="changeTimeRange('week', this)">Semana</button>
+    <button class="w3-bar-item w3-button w3-round w3-white time-range-btn" onclick="changeTimeRange('month', this)">Mes</button>
+</div>
+
+<div class="w3-row-padding w3-margin-bottom">
+    <div class="w3-col s12">
+        <div class="w3-card-4 w3-white w3-round-large">
+            <header class="w3-container w3-light-grey w3-round-top-large">
+                <h5>Uso de Recursos (CPU, RAM, Disco)</h5>
+            </header>
+            <div class="w3-container w3-padding">
+                <canvas id="resourceChart" style="width:100%;"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+<br>
+<div class="w3-row-padding w3-margin-bottom">
+    <div class="w3-col s12">
+        <div class="w3-card-4 w3-white w3-round-large">
+            <header class="w3-container w3-light-grey w3-round-top-large">
+                <h5>Tráfico de Red (KB/s)</h5>
+            </header>
+            <div class="w3-container w3-padding">
+                <canvas id="networkChart" style="width:100%;"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Chart.js from CDN -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<!-- Custom script for metrics -->
+<script src="{{ url_for('static', path='js/client_metrics.js') }}"></script>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        // Inicializa los gráficos pasando el ID del cliente desde el template
+        initializeMetricsCharts({{ client.id }});
+    });
+</script>
+{% endblock %}

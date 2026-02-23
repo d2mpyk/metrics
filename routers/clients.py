@@ -331,6 +331,7 @@ def get_client_details(
     "/{client_id}/update",
     status_code=status.HTTP_303_SEE_OTHER,
     include_in_schema=False,
+    name="update_client_description",
 )
 def update_client_description(
     request: Request,
@@ -359,6 +360,44 @@ def update_client_description(
 
 
 @router.get(
+    "/{client_id}/metrics",
+    response_class=HTMLResponse,
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False,
+    name="get_client_metrics_view",
+)
+def get_client_metrics_view(
+    request: Request,
+    client_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    admin_or_redirect: Annotated[User | RedirectResponse, Depends(get_current_admin)],
+):
+    """Muestra la vista de métricas en tiempo real para un cliente."""
+    if isinstance(admin_or_redirect, RedirectResponse):
+        return admin_or_redirect
+    current_admin = admin_or_redirect
+
+    client = db.get(Client, client_id)
+    if not client:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Cliente no encontrado"
+        )
+
+    data = get_dashboard_stats(db)
+
+    return templates.TemplateResponse(
+        request=request,
+        name="dashboard/client_metrics.html",
+        context={
+            "client": client,
+            "user": current_admin,
+            "data": data,
+            "title": f"Métricas: {client.description or client.client_identifier}",
+        },
+    )
+
+
+@router.get(
     "/{client_id}/metrics/json",
     status_code=status.HTTP_200_OK,
 )
@@ -367,6 +406,7 @@ def get_client_metrics_json(
     db: Annotated[Session, Depends(get_db)],
     admin_or_redirect: Annotated[User | RedirectResponse, Depends(get_current_admin)],
     last_timestamp: Annotated[datetime | None, Query()] = None,
+    time_range: Annotated[str | None, Query()] = None,
 ):
     """Devuelve las últimas 20 métricas de un cliente en formato JSON para polling."""
     if isinstance(admin_or_redirect, RedirectResponse):
@@ -381,7 +421,22 @@ def get_client_metrics_json(
 
     query = select(ServerMetric).where(ServerMetric.client_id == client_id)
 
-    if last_timestamp:
+    if time_range:
+        # Lógica para rangos históricos
+        now = datetime.now(UTC)
+        if time_range == "day":
+            start_date = now - timedelta(days=1)
+        elif time_range == "week":
+            start_date = now - timedelta(weeks=1)
+        elif time_range == "month":
+            start_date = now - timedelta(days=30)
+        else:
+            start_date = now - timedelta(days=1)
+
+        # Traer todas las métricas del rango en orden ascendente
+        query = query.where(ServerMetric.timestamp >= start_date).order_by(ServerMetric.timestamp.asc())
+        metrics = db.execute(query).scalars().all()
+    elif last_timestamp:
         # Si hay timestamp, traemos solo las nuevas (orden ascendente para el gráfico)
         query = query.where(ServerMetric.timestamp > last_timestamp).order_by(
             ServerMetric.timestamp.asc()

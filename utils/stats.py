@@ -32,7 +32,11 @@ class DashboardStatsCache:
             approved = (
                 db.execute(select(func.count(ApprovedClient.id))).scalar() or 0
             )
-            self.data["total_pending"] = approved - self.data["total_clients"]
+            if approved is None:
+                self.data["total_pending"] = 0
+            else:
+                self.data["total_pending"] = approved - self.data["total_clients"]
+                
             self.last_updated = now
 
         return self.data.copy()

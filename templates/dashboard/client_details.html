@@ -1,65 +1,55 @@
-{% extends "dashboard/base.html" %}
+{% extends "dashboard/base_dashboard.html" %}
 
 {% block title %}{{ title }}{% endblock %}
 
 {% block content %}
-<div class="container mx-auto px-4 py-8">
-    <h1 class="text-3xl font-bold text-gray-800 mb-6">{{ title }}</h1>
+<div class="w3-container w3-padding-32">
+    <h2 class="w3-xlarge w3-text-blue-grey"><b><i class="fa fa-desktop"></i> {{ title }}</b></h2>
 
-    <div class="bg-white shadow-md rounded-lg p-6">
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-                <h3 class="text-lg font-semibold text-gray-700">Identificador</h3>
-                <p class="text-gray-600 font-mono">{{ client.client_identifier }}</p>
-            </div>
-            <div>
-                <h3 class="text-lg font-semibold text-gray-700">Dirección IP</h3>
-                <p class="text-gray-600">{{ client.ip_address }}</p>
-            </div>
-            <div>
-                <h3 class="text-lg font-semibold text-gray-700">Fecha de Creación</h3>
-                <p class="text-gray-600">{{ client.created_at.strftime('%Y-%m-%d %H:%M:%S') }} UTC</p>
-            </div>
-            <div>
-                <h3 class="text-lg font-semibold text-gray-700">Estado</h3>
-                <p class="text-gray-600">
-                    {% if client.is_active %}
-                    <span
-                        class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
-                        Activo
-                    </span>
-                    {% else %}
-                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">
-                        Inactivo
-                    </span>
-                    {% endif %}
-                </p>
-            </div>
-        </div>
-
-        <hr class="my-6">
-
-        <div>
-            <h3 class="text-lg font-semibold text-gray-700 mb-4">Actualizar Descripción</h3>
-            <form action="/api/v1/clients/{{ client.id }}/update" method="post" class="space-y-4">
-                <div>
-                    <label for="description" class="block text-sm font-medium text-gray-700">Descripción del
-                        Dispositivo</label>
-                    <div class="mt-1">
-                        <input type="text" name="description" id="description"
-                            class="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
-                            value="{{ client.description or '' }}" placeholder="Ej: Servidor de Producción - Rack 2">
-                    </div>
+    <div class="w3-card-4 w3-white w3-round-large">
+        <div class="w3-container w3-padding-24">
+            <div class="w3-row-padding">
+                <div class="w3-half w3-margin-bottom">
+                    <h5 class="w3-text-grey">Identificador</h5>
+                    <p class="w3-text-dark-grey w3-monospace">{{ client.client_identifier }}</p>
                 </div>
-                <div>
-                    <button type="submit"
-                        class="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
-                        Guardar Cambios
+                <div class="w3-half w3-margin-bottom">
+                    <h5 class="w3-text-grey">Dirección IP</h5>
+                    <p class="w3-text-dark-grey">{{ client.ip_address }}</p>
+                </div>
+                <div class="w3-half w3-margin-bottom">
+                    <h5 class="w3-text-grey">Fecha de Creación</h5>
+                    <p class="w3-text-dark-grey">{{ client.created_at.strftime('%Y-%m-%d %H:%M:%S') }} UTC</p>
+                </div>
+                <div class="w3-half w3-margin-bottom">
+                    <h5 class="w3-text-grey">Estado</h5>
+                    <p>
+                        {% if client.is_active %}
+                        <span class="w3-tag w3-round w3-green">
+                            Activo
+                        </span>
+                        {% else %}
+                        <span class="w3-tag w3-round w3-red">
+                            Inactivo
+                        </span>
+                        {% endif %}
+                    </p>
+                </div>
+                <hr class="w3-margin-top w3-margin-bottom">
+
+                <form action="{{ url_for('update_client_description', client_id=client.id) }}" method="post"
+                    class="w3-container">
+                    <h5 class="w3-text-grey">Actualizar Descripción</h5>
+                    <label for="description">Descripción del Dispositivo</label>
+                    <input class="w3-input w3-border w3-round w3-margin-bottom" type="text" name="description"
+                        id="description" value="{{ client.description or '' }}"
+                        placeholder="Ej: Servidor de Producción - Rack 2">
+
+                    <button type="submit" class="w3-button w3-blue w3-round w3-section w3-right">
+                        <i class="fa fa-save"></i> Guardar Cambios
                     </button>
-                </div>
-            </form>
+                </form>
+            </div>
         </div>
-
     </div>
-</div>
-{% endblock %}
+    {% endblock %}

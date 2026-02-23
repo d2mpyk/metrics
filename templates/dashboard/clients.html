@@ -3,152 +3,139 @@
 {% block title %}{{ title }}{% endblock %}
 
 {% block content %}
-<div class="container mx-auto px-4 py-8">
-    <h1 class="text-3xl font-bold text-gray-800 mb-6">{{ title }}</h1>
+<div class="w3-container w3-padding-32">
+    <h2 class="w3-xlarge w3-text-blue-grey"><b><i class="fa fa-server"></i> {{ title }}</b></h2>
 
     <!-- Card Grid Section -->
-    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6 mb-8">
+    <div class="w3-row-padding w3-margin-top">
         {% for client in clients %}
         {% set metric = client.latest_metric %}
         {% set is_stale = not metric or (now - metric.timestamp).total_seconds() > 300 %}
-        <a href="{{ url_for('get_client_details', client_id=client.id) }}"
-            class="block h-full hover:no-underline transform hover:scale-105 transition-transform duration-200">
-            <div
-                class="bg-white rounded-lg shadow-md p-4 flex flex-col justify-between border-t-4 {{ 'border-red-500' if is_stale else 'border-green-500' }} h-full">
-                <!-- Card Header: CPU, Status Icon, RAM -->
-                <div class="flex justify-between items-start text-sm">
-                    <!-- CPU -->
-                    <div class="text-center">
-                        <span class="font-bold text-gray-500">CPU</span>
-                        {% if metric %}
-                        <p
-                            class="text-lg font-semibold {{ 'text-red-600' if metric.cpu_usage > 80 else 'text-green-600' }}">
-                            {{ "%.1f"|format(metric.cpu_usage) }}%
-                        </p>
-                        {% else %}
-                        <p class="text-lg font-semibold text-gray-400">--</p>
-                        {% endif %}
-                    </div>
-                    <!-- Status Icon -->
-                    <div class="text-center">
-                        <div class="p-2 rounded-md {{ 'bg-red-100' if is_stale else 'bg-green-100' }}">
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
-                                stroke="currentColor"
-                                class="w-6 h-6 {{ 'text-red-500' if is_stale else 'text-green-500' }}">
-                                <path stroke-linecap="round" stroke-linejoin="round"
-                                    d="M9 17.25v1.007a3 3 0 0 1-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0 1 15 18.257V17.25m6-12V15a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 15V5.25A2.25 2.25 0 0 1 5.25 3h13.5A2.25 2.25 0 0 1 21 5.25Z" />
-                            </svg>
+        <div class="w3-col l3 m6 s12 w3-margin-bottom">
+            <a href="{{ url_for('get_client_metrics_view', client_id=client.id) }}" style="text-decoration: none;">
+                <div
+                    class="w3-card-4 w3-round-large w3-hover-shadow w3-border-top w3-border-4 {{ 'w3-border-red' if is_stale else 'w3-border-green' }}">
+                    <div class="w3-container w3-padding">
+                        <!-- Card Header: CPU, Status Icon, RAM -->
+                        <div class="w3-row">
+                            <!-- CPU -->
+                            <div class="w3-third w3-center">
+                                <span class="w3-text-grey w3-bold">CPU</span>
+                                {% if metric %}
+                                <div
+                                    class="w3-large w3-bold {{ 'w3-text-red' if metric.cpu_usage > 80 else 'w3-text-green' }}">
+                                    {{ "%.1f"|format(metric.cpu_usage) }}%
+                                </div>
+                                {% else %}
+                                <div class="w3-large w3-bold w3-text-grey">--</div>
+                                {% endif %}
+                            </div>
+                            <!-- Status Icon -->
+                            <div class="w3-third w3-center">
+                                <div class="w3-padding w3-round {{ 'w3-pale-red' if is_stale else 'w3-pale-green' }}">
+                                    <i
+                                        class="fa fa-server w3-xlarge {{ 'w3-text-red' if is_stale else 'w3-text-green' }}"></i>
+                                </div>
+                            </div>
+                            <!-- RAM -->
+                            <div class="w3-third w3-center">
+                                <span class="w3-text-grey w3-bold">RAM</span>
+                                {% if metric %}
+                                <div
+                                    class="w3-large w3-bold {{ 'w3-text-red' if metric.ram_usage > 80 else 'w3-text-green' }}">
+                                    {{ "%.1f"|format(metric.ram_usage) }}%
+                                </div>
+                                {% else %}
+                                <div class="w3-large w3-bold w3-text-grey">--</div>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <!-- Card Body: Name and IP -->
+                        <div class="w3-center w3-margin-top">
+                            <div class="w3-bold w3-text-dark-grey"
+                                style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
+                                title="{{ client.description }}">
+                                {{ client.description }}</div>
+                            <div class="w3-text-grey"><strong>{{ client.ip_address }}</strong></div>
+                        </div>
+
+                        <!-- Card Footer: Disk -->
+                        <div class="w3-center w3-margin-top">
+                            <span class="w3-bold w3-text-grey">
+                                Ocupación Disco:
+                                {% if metric and metric.disk_usage is not none %}
+                                <span
+                                    class="w3-bold {{ 'w3-text-red' if metric.disk_usage > 85 else 'w3-text-green' }}">
+                                    {{ "%.2f"|format(metric.disk_usage) }} %
+                                </span>
+                                {% else %}
+                                <span class="w3-bold w3-text-grey">---</span>
+                                {% endif %}
+                            </span>
                         </div>
                     </div>
-                    <!-- RAM -->
-                    <div class="text-center">
-                        <span class="font-bold text-gray-500">RAM</span>
-                        {% if metric %}
-                        <p
-                            class="text-lg font-semibold {{ 'text-red-600' if metric.ram_usage > 80 else 'text-green-600' }}">
-                            {{ "%.1f"|format(metric.ram_usage) }}%
-                        </p>
-                        {% else %}
-                        <p class="text-lg font-semibold text-gray-400">--</p>
-                        {% endif %}
-                    </div>
                 </div>
-
-                <!-- Card Body: Name and IP -->
-                <div class="text-center my-4">
-                    <p class="font-bold text-gray-800 truncate"
-                        title="{{ client.description or client.client_identifier }}">
-                        {{ client.description or client.client_identifier }}</p>
-                    <p class="text-xs text-gray-500">{{ client.ip_address }}</p>
-                </div>
-
-                <!-- Card Footer: Disk -->
-                <div class="text-center mt-auto">
-                    <span class="text-sm font-semibold text-gray-600">
-                        Ocupación Disco:
-                        {% if metric and metric.disk_usage is not none %}
-                        <span class="font-bold {{ 'text-red-600' if metric.disk_usage > 85 else 'text-green-600' }}">
-                            {{ "%.2f"|format(metric.disk_usage) }} %
-                        </span>
-                        {% else %}
-                        <span class="font-bold text-gray-400">---</span>
-                        {% endif %}
-                    </span>
-                </div>
-            </div>
-        </a>
+            </a>
+        </div>
         {% endfor %}
     </div>
 
+    <hr>
+
     <!-- Client List Table -->
-    <div class="bg-white shadow-md rounded-lg overflow-x-auto">
-        <table class="min-w-full divide-y divide-gray-200">
-            <thead class="bg-gray-50">
-                <tr>
-                    <th scope="col"
-                        class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Identificador
-                    </th>
-                    <th scope="col"
-                        class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Descripción
-                    </th>
-                    <th scope="col"
-                        class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        IP
-                    </th>
-                    <th scope="col"
-                        class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Estado
-                    </th>
-                    <th scope="col"
-                        class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Registrado
-                    </th>
-                    <th scope="col" class="relative px-6 py-3">
-                        <span class="sr-only">Acciones</span>
-                    </th>
+    <div class="w3-card w3-white w3-round-large w3-responsive">
+        <table class="w3-table-all w3-hoverable">
+            <thead>
+                <tr class="w3-blue">
+                    <th>Identificador</th>
+                    <th>Descripción</th>
+                    <th>IP</th>
+                    <th>Estado</th>
+                    <th>Registrado</th>
+                    <th>Acciones</th>
                 </tr>
             </thead>
-            <tbody class="bg-white divide-y divide-gray-200">
+            <tbody>
                 {% for client in clients %}
-                <tr>
-                    <td class="px-6 py-4 whitespace-nowrap">
-                        <div class="text-sm text-gray-900 font-mono" title="{{ client.client_identifier }}">{{
-                            client.client_identifier[:8] }}...</div>
+                <tr class="w3-hover-blue-grey">
+                    <td>
+                        <span class="w3-tag w3-dark-grey w3-round" title="{{ client.client_identifier }}">{{
+                            client.client_identifier[:8] }}...</span>
                     </td>
-                    <td class="px-6 py-4 whitespace-nowrap">
-                        <div class="text-sm text-gray-900 truncate max-w-xs" title="{{ client.description or '' }}">{{
+                    <td>
+                        <div style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
+                            title="{{ client.description or '' }}">{{
                             client.description or 'N/A' }}</div>
                     </td>
-                    <td class="px-6 py-4 whitespace-nowrap">
-                        <div class="text-sm text-gray-500">{{ client.ip_address }}</div>
-                    </td>
-                    <td class="px-6 py-4 whitespace-nowrap">
+                    <td>{{ client.ip_address }}</td>
+                    <td>
                         {% if client.is_active %}
-                        <span
-                            class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+                        <span class="w3-tag w3-round w3-green">
                             Activo
                         </span>
                         {% else %}
-                        <span
-                            class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">
+                        <span class="w3-tag w3-round w3-red">
                             Inactivo
                         </span>
                         {% endif %}
                     </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td>
                         {{ client.created_at.strftime('%Y-%m-%d') }}
                     </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                    <td>
+                        <a href="{{ url_for('get_client_metrics_view', client_id=client.id) }}"
+                            class="w3-button w3-tiny w3-teal w3-round" title="Ver Gráficos"><i
+                                class="fa fa-bar-chart"></i></a>
                         <a href="{{ url_for('get_client_details', client_id=client.id) }}"
-                            class="text-indigo-600 hover:text-indigo-900">Detalles</a>
+                            class="w3-button w3-tiny w3-blue w3-round" title="Editar Detalles"><i
+                                class="fa fa-pencil"></i></a>
                     </td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
-    <!-- Pagination would go here -->
+    <!-- TODO: Pagination would go here -->
 </div>
 {% endblock %}
