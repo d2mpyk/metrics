@@ -4,6 +4,7 @@ import base64
 import hashlib
 import json
 import os
+import random
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.backends import default_backend
@@ -105,20 +106,52 @@ def main():
             return
 
     # 3. Enviar Métricas
-    print("\n[3] Generando y enviando métricas encriptadas...")
-    metrics_data = {"cpu": 45.5, "ram": 60.2, "disk": 30.1}
-    print(f"Datos originales: {metrics_data}")
-
-    encrypted_payload = encrypt_payload(metrics_data, client_secret_key)
-    print(f"Payload encriptado: {encrypted_payload}")
-
+    print(
+        "\n[3] Iniciando envío continuo de métricas (Presiona Ctrl+C para detener)..."
+    )
     headers = {"Authorization": f"Bearer {access_token}"}
-    resp = requests.post(METRICS_URL, json=encrypted_payload, headers=headers)
 
-    if resp.status_code == 201:
-        print("[SUCCESS] Métricas enviadas y guardadas correctamente.")
-    else:
-        print(f"[ERROR] Fallo al enviar métricas: {resp.status_code} - {resp.text}")
+    # Contadores acumulativos para la red, para que el servidor pueda calcular el delta
+    total_sent = random.randint(1000, 5000)
+    total_recv = random.randint(10000, 50000)
+
+    try:
+        while True:
+            # Generar datos aleatorios
+            total_sent += random.randint(1024, 51200)  # Añadir entre 1KB y 50KB
+            total_recv += random.randint(10240, 204800)  # Añadir entre 10KB y 200KB
+
+            metrics_data = {
+                "cpu": round(random.uniform(5.0, 95.0), 2),
+                "ram": round(random.uniform(20.0, 80.0), 2),
+                "disk": round(random.uniform(10.0, 70.0), 2),
+                "net_sent": total_sent,
+                "net_recv": total_recv,
+            }
+
+            encrypted_payload = encrypt_payload(metrics_data, client_secret_key)
+
+            try:
+                resp = requests.post(
+                    METRICS_URL, json=encrypted_payload, headers=headers
+                )
+
+                if resp.status_code == 201:
+                    print(
+                        f"[{time.strftime('%H:%M:%S')}] Métricas enviadas: CPU {metrics_data['cpu']}% | RAM {metrics_data['ram']}% | NET_SENT {total_sent // 1024}KB"
+                    )
+                else:
+                    print(
+                        f"\n[ERROR] Fallo al enviar métricas: {resp.status_code} - {resp.text}"
+                    )
+                    break
+            except requests.exceptions.RequestException as e:
+                print(f"\n[ERROR] Problema de conexión: {e}")
+                break
+
+            time.sleep(5)  # Intervalo de envío
+    except KeyboardInterrupt:
+        print("\n--- Simulación detenida por el usuario. ---")
 
 
 if __name__ == "__main__":
