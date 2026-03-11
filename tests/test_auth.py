@@ -163,7 +163,10 @@ def test_device_activation_flow_redirects(client, admin_user, db_session):
         follow_redirects=False,
     )
     assert resp_success.status_code == status.HTTP_303_SEE_OTHER
-    assert resp_success.headers["location"] == "/api/v1/dashboard"
+    assert (
+        resp_success.headers["location"]
+        == "http://testserver/metrics/api/v1/dashboard/"
+    )
     assert "flash_message" in resp_success.cookies
     assert resp_success.cookies["flash_type"] == "green"
 

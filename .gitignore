@@ -256,3 +256,4 @@ $RECYCLE.BIN/
 
 # Personals files
 .init_configs.md
+httpd.conf

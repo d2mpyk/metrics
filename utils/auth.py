@@ -142,7 +142,9 @@ def get_current_user(
 
     if not token:
         # No hay token, no se puede continuar.
-        return RedirectResponse(url="/api/v1/auth/login", status_code=status.HTTP_303_SEE_OTHER)
+        # Usamos request.url_for para construir la URL respetando el root_path
+        login_url = request.url_for("login")
+        return RedirectResponse(url=login_url, status_code=status.HTTP_303_SEE_OTHER)
 
     try:
         payload = jwt.decode(
@@ -155,7 +157,9 @@ def get_current_user(
         if not username:
             raise jwt.InvalidTokenError
 
-        user = db.execute(select(User).where(User.username == username)).scalars().first()
+        user = (
+            db.execute(select(User).where(User.username == username)).scalars().first()
+        )
         if not user or not user.is_active:
             raise jwt.InvalidTokenError
 
@@ -163,16 +167,30 @@ def get_current_user(
 
     except jwt.ExpiredSignatureError:
         # Caso específico: el token ha expirado.
-        response = RedirectResponse(url="/api/v1/auth/login", status_code=status.HTTP_303_SEE_OTHER)
-        response.set_cookie(key="flash_message", value="Su sesión ha expirado. Por favor, inicie sesión de nuevo.", httponly=True)
+        login_url = request.url_for("login")
+        response = RedirectResponse(
+            url=login_url, status_code=status.HTTP_303_SEE_OTHER
+        )
+        response.set_cookie(
+            key="flash_message",
+            value="Su sesión ha expirado. Por favor, inicie sesión de nuevo.",
+            httponly=True,
+        )
         response.set_cookie(key="flash_type", value="orange", httponly=True)
         response.delete_cookie("access_token")
         return response
 
     except jwt.InvalidTokenError:
         # Caso genérico: token inválido, manipulado, o usuario no encontrado.
-        response = RedirectResponse(url="/api/v1/auth/login", status_code=status.HTTP_303_SEE_OTHER)
-        response.set_cookie(key="flash_message", value="Error de autenticación. Por favor, inicie sesión.", httponly=True)
+        login_url = request.url_for("login")
+        response = RedirectResponse(
+            url=login_url, status_code=status.HTTP_303_SEE_OTHER
+        )
+        response.set_cookie(
+            key="flash_message",
+            value="Error de autenticación. Por favor, inicie sesión.",
+            httponly=True,
+        )
         response.set_cookie(key="flash_type", value="red", httponly=True)
         response.delete_cookie("access_token")
         return response

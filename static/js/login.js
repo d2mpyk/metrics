@@ -1,5 +1,8 @@
 document.addEventListener("DOMContentLoaded", function () {
 
+    // Detectar dinámicamente si la app está corriendo bajo un prefijo (ej: /metrics)
+    const BASE_PATH = window.location.pathname.startsWith("/metrics") ? "/metrics" : "";
+
     // JS LOGIN
     const formLogin = document.getElementById("loginForm");
 
@@ -16,7 +19,7 @@ document.addEventListener("DOMContentLoaded", function () {
             formData.append('username', username);
             formData.append('password', password);
 
-            const tokenResponse = await fetch("/api/v1/auth/token", {
+            const tokenResponse = await fetch(`${BASE_PATH}/api/v1/auth/token`, {
                 method: "POST",
                 headers: {
                     // Cambiamos el tipo de contenido
@@ -28,21 +31,29 @@ document.addEventListener("DOMContentLoaded", function () {
 
             if (!tokenResponse.ok) {
                 // Es bueno leer el error que devuelve el server
-                const errorData = await tokenResponse.json();
-                console.error("Error del servidor:", errorData);
-                throw new Error("Credenciales inválidas");
+                const contentType = tokenResponse.headers.get("content-type");
+                if (contentType && contentType.includes("application/json")) {
+                    const errorData = await tokenResponse.json();
+                    console.error("Error del servidor:", errorData);
+                } else {
+                    const errorText = await tokenResponse.text();
+                    console.error("Error del servidor (No JSON):", errorText);
+                }
+                throw new Error("Credenciales inválidas o error del servidor (" + tokenResponse.status + ")");
+            }
+
+            const contentType = tokenResponse.headers.get("content-type");
+            if (!contentType || !contentType.includes("application/json")) {
+                throw new Error("Respuesta inesperada del servidor: Se esperaba JSON pero se recibió HTML/Texto.");
             }
 
             const data = await tokenResponse.json();
-            //const accessToken = data.access_token;
-            //const tokenType = data.token_type;
-            //console.log(`Token Recibido: ${accessToken}`)
 
             // 3️⃣ Informar Acceso
             //alert("Login successful!");
 
             // 4️⃣ Redirigir al endpoint protegido
-            window.location.href = "/api/v1/dashboard";
+            window.location.href = `${BASE_PATH}/api/v1/dashboard`;
 
         } catch (error) {
             alert("Error en autenticación: " + error.message);
@@ -63,7 +74,7 @@ document.addEventListener("DOMContentLoaded", function () {
         submitBtn.innerHTML = "<strong>Enviando...</strong>";
 
         try {
-            const response = await fetch("/api/v1/users/forgot-password", {
+            const response = await fetch(`${BASE_PATH}/api/v1/users/forgot-password`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json"
@@ -76,7 +87,7 @@ document.addEventListener("DOMContentLoaded", function () {
             if (response.ok) {
                 alert(data.message);
                 // Opcional: Redirigir al login
-                window.location.href = "/";
+                window.location.href = `${BASE_PATH}/`;
             } else {
                 alert("Error: " + (data.detail || "Ocurrió un error inesperado"));
             }
@@ -121,7 +132,7 @@ document.addEventListener("DOMContentLoaded", function () {
         submitBtn.innerHTML = "<strong>Enviando...</strong>";
 
         try {
-            const response = await fetch(`/api/v1/users/reset-password/${token}`, {
+            const response = await fetch(`${BASE_PATH}/api/v1/users/reset-password/${token}`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json"
@@ -133,7 +144,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
             if (response.ok) {
                 alert(data.message);
-                window.location.href = "/"; // Redirigir al login
+                window.location.href = `${BASE_PATH}/`; // Redirigir al login
             } else {
                 alert("Error: " + (data.detail || "Ocurrió un error inesperado"));
             }

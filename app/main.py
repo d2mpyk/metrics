@@ -28,6 +28,7 @@ app = FastAPI(
     title="FastAPI Template",
     description="Este es una plantilla de app en FastAPI",
     version="1.0.0",
+    root_path="/metrics", # Agregación para Apache
 )
 # Middleware
 app.add_middleware(HTMLAuthMiddleware)

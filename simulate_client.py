@@ -10,7 +10,7 @@ from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.backends import default_backend
 
 # Configuración
-BASE_URL = "http://localhost:8000"
+BASE_URL = "http://localhost:8000/metrics"
 AUTH_URL = f"{BASE_URL}/api/v1/auth"
 METRICS_URL = f"{BASE_URL}/api/v1/clients/metrics"
 

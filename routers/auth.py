@@ -352,7 +352,7 @@ def device_activate_submit(
 
     # Redirección exitosa al Dashboard
     response = RedirectResponse(
-        url="/api/v1/dashboard", status_code=status.HTTP_303_SEE_OTHER
+        url=request.url_for("dashboard"), status_code=status.HTTP_303_SEE_OTHER
     )
     response.set_cookie(
         key="flash_message", value="Dispositivo autorizado exitosamente.", httponly=True

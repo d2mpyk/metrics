@@ -214,7 +214,7 @@ def test_full_device_flow_integration(client, admin_user):
         "/api/v1/clients/approved", data=approved_payload, follow_redirects=False
     )
     assert resp_approve.status_code == status.HTTP_303_SEE_OTHER
-    assert resp_approve.headers["location"].endswith("/api/v1/clients/approved")
+    assert resp_approve.headers["location"].endswith("/metrics/api/v1/clients/approved")
     # Verificar que se estableció el mensaje flash
     assert "flash_message" in resp_approve.cookies
 
@@ -237,7 +237,10 @@ def test_full_device_flow_integration(client, admin_user):
         follow_redirects=False,
     )
     assert resp_activate.status_code == status.HTTP_303_SEE_OTHER
-    assert resp_activate.headers["location"] == "/api/v1/dashboard"
+    assert (
+        resp_activate.headers["location"]
+        == "http://testserver/metrics/api/v1/dashboard/"
+    )
     # Verificar cookies flash
     assert "flash_message" in resp_activate.cookies
 
@@ -257,7 +260,13 @@ def test_full_device_flow_integration(client, admin_user):
     client_secret_key = token_data["client_secret_key"]
 
     # 6. Enviar Métricas
-    metrics_data = {"cpu": 12.3, "ram": 45.6, "disk": 78.9, "net_sent": 0, "net_recv": 0}
+    metrics_data = {
+        "cpu": 12.3,
+        "ram": 45.6,
+        "disk": 78.9,
+        "net_sent": 0,
+        "net_recv": 0,
+    }
     encrypted_payload = encrypt_helper(metrics_data, client_secret_key)
 
     resp_metrics = client.post(
@@ -314,7 +323,7 @@ def test_create_duplicate_approved_client_fails(admin_client, db_session):
 
     # 3. Verificar redirección y cookie flash de error
     assert response.status_code == status.HTTP_303_SEE_OTHER
-    assert response.headers["location"].endswith("/api/v1/clients/approved")
+    assert response.headers["location"].endswith("/metrics/api/v1/clients/approved")
     assert "flash_message" in response.cookies
     assert response.cookies["flash_type"] == "red"
     assert "ya se encuentra aprobada" in response.cookies["flash_message"]
@@ -542,7 +551,9 @@ def test_update_client_description_manually_redirects(admin_client, db_session):
     # 3. Verificar la redirección
     assert response.status_code == status.HTTP_303_SEE_OTHER
     # La URL de redirección debe apuntar a la vista de detalles del cliente
-    assert response.headers["location"].endswith(f"/api/v1/clients/{client_to_update.id}")
+    assert response.headers["location"].endswith(
+        f"/metrics/api/v1/clients/{client_to_update.id}"
+    )
 
     # 4. Verificar que el dato se actualizó en la base de datos
     db_session.refresh(client_to_update)
