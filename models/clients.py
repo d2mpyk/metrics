@@ -14,6 +14,7 @@ class ApprovedClient(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     ip_address: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False)
     description: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

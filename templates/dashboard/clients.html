@@ -10,7 +10,7 @@
     <div class="w3-row-padding w3-margin-top">
         {% for client in clients %}
         {% set metric = client.latest_metric %}
-        {% set is_stale = not metric or (now - metric.timestamp).total_seconds() > 300 %}
+        {% set is_stale = not metric or (now - metric.timestamp).total_seconds() > 130 %}
         <div class="w3-col l3 m6 s12 w3-margin-bottom">
             <a href="{{ url_for('get_client_metrics_view', client_id=client.id) }}" style="text-decoration: none;">
                 <div
@@ -98,7 +98,9 @@
             </thead>
             <tbody>
                 {% for client in clients %}
-                <tr class="w3-hover-blue-grey">
+                {% set metric = client.latest_metric %}
+                {% set is_stale = not metric or (now - metric.timestamp).total_seconds() > 130 %}
+                <tr class="w3-hover-blue-grey {{ 'w3-pale-red' if is_stale }}">
                     <td>
                         <span class="w3-tag w3-dark-grey w3-round" title="{{ client.client_identifier }}">{{
                             client.client_identifier[:8] }}...</span>

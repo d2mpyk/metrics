@@ -170,6 +170,6 @@ def test_device_activation_flow_redirects(client, admin_user, db_session):
     assert "flash_message" in resp_success.cookies
     assert resp_success.cookies["flash_type"] == "green"
 
-    # 5. Verificar que el ApprovedClient fue eliminado
-    deleted_approved_client = db_session.get(ApprovedClient, approved_client_rec.id)
-    assert deleted_approved_client is None
+    # 5. Verificar que el ApprovedClient fue marcado como activo
+    db_session.refresh(approved_client_rec)
+    assert approved_client_rec.is_active is True

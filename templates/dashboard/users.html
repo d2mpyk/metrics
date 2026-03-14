@@ -13,6 +13,7 @@
                     <th>Rol</th>
                     <th>Estado</th>
                     <th>Creado</th>
+                    <th>Acciones</th>
                 </tr>
             </thead>
             <tbody>
@@ -24,6 +25,11 @@
                     <td>{{ u.role }}</td>
                     <td>{{ "Activo" if u.is_active else "Inactivo" }}</td>
                     <td>{{ u.created_at.strftime('%Y-%m-%d') }}</td>
+                    <td>
+                        <a href="{{ url_for('get_user_edit_view', user_id=u.id) }}" class="w3-button w3-tiny w3-blue w3-round w3-hover-white w3-hover-text-blue">
+                            <i class="fa fa-edit"></i> Editar
+                        </a>
+                    </td>
                 </tr>
                 {% endfor %}
             </tbody>

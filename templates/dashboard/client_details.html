@@ -4,7 +4,7 @@
 
 {% block content %}
 <div class="w3-container w3-padding-32">
-    <h2 class="w3-xlarge w3-text-blue-grey"><b><i class="fa fa-desktop"></i> {{ title }}</b></h2>
+    <h2 class="w3-xlarge w3-text-blue-grey"><b><i class="fa fa-desktop"></i> {{ client.description }}</b></h2>
 
     <div class="w3-card-4 w3-white w3-round-large">
         <div class="w3-container w3-padding-24">
@@ -35,7 +35,6 @@
                         {% endif %}
                     </p>
                 </div>
-                <hr class="w3-margin-top w3-margin-bottom">
 
                 <form action="{{ url_for('update_client_description', client_id=client.id) }}" method="post"
                     class="w3-container">
@@ -45,10 +44,14 @@
                         id="description" value="{{ client.description or '' }}"
                         placeholder="Ej: Servidor de Producción - Rack 2">
 
-                    <button type="submit" class="w3-button w3-blue w3-round w3-section w3-right">
+                    <button type="submit" class="w3-button w3-blue w3-round w3-section w3-right w3-hover-white w3-hover-text-blue">
                         <i class="fa fa-save"></i> Guardar Cambios
                     </button>
+                    <button href="/api/v1/clients" class="w3-button w3-red w3-round w3-section w3-left w3-hover-white w3-hover-text-red">
+                        <i class="fa fa-server fa-fw"></i>  Regresar
+                    </button>
                 </form>
+                
             </div>
         </div>
     </div>

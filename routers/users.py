@@ -250,19 +250,130 @@ def get_users(
     result = db.execute(select(User))
     users = result.scalars().all()
 
-    # Usar datos cacheados para los contadores del dashboard
-    data = get_dashboard_stats(db)
+    flash_message = request.cookies.get("flash_message")
+    flash_type = request.cookies.get("flash_type")
 
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         request=request,
         name="dashboard/users.html",
         context={
             "users": users,
             "user": user_admin,
-            "data": data,
+            "data": get_dashboard_stats(db),
             "title": "Gestión de Usuarios",
+            "flash_message": flash_message,
+            "flash_type": flash_type,
         },
     )
+
+    if flash_message:
+        response.delete_cookie("flash_message")
+        response.delete_cookie("flash_type")
+
+    return response
+
+
+# ----------------------------------------------------------------------
+# Vista de Edición de Usuario (GET)
+@router.get("/{user_id}/edit", response_class=HTMLResponse, name="get_user_edit_view")
+def get_user_edit_view(
+    request: Request,
+    user_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    user_or_redirect: Annotated[User | RedirectResponse, Depends(get_current_admin)],
+):
+    """Muestra el formulario de edición para un usuario específico (Admin Only)."""
+    if isinstance(user_or_redirect, RedirectResponse):
+        return user_or_redirect
+
+    target_user = db.get(User, user_id)
+    if not target_user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    flash_message = request.cookies.get("flash_message")
+    flash_type = request.cookies.get("flash_type")
+
+    response = templates.TemplateResponse(
+        "dashboard/user_edit.html",
+        {
+            "request": request,
+            "target_user": target_user,
+            "user": user_or_redirect,
+            "data": get_dashboard_stats(db),
+            "title": f"Editar: {target_user.username}",
+            "flash_message": flash_message,
+            "flash_type": flash_type,
+        },
+    )
+
+    if flash_message:
+        response.delete_cookie("flash_message")
+        response.delete_cookie("flash_type")
+
+    return response
+
+
+# ----------------------------------------------------------------------
+# Procesar Edición de Usuario (POST)
+@router.post("/{user_id}/edit", name="post_user_edit_view")
+async def post_user_edit_view(
+    request: Request,
+    user_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    requester_or_redirect: CurrentUser,  # Permite que el usuario se edite a sí mismo
+    username: Annotated[str | None, Form()] = None,
+    role: Annotated[str | None, Form()] = None,
+    is_active: Annotated[str | None, Form()] = None,
+    password: Annotated[str | None, Form()] = None,
+):
+    if isinstance(requester_or_redirect, RedirectResponse):
+        return requester_or_redirect
+
+    # Seguridad: Solo admin o el propio usuario
+    is_admin = requester_or_redirect.role == "admin"
+    if not is_admin and requester_or_redirect.id != user_id:
+        raise HTTPException(
+            status_code=403, detail="No tienes permiso para editar este perfil."
+        )
+
+    user_to_update = db.get(User, user_id)
+    if not user_to_update:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    # Aplicar cambios según permisos
+    if is_admin:
+        if username:
+            user_to_update.username = username
+        if role:
+            user_to_update.role = role
+        user_to_update.is_active = True if is_active == "on" else False
+
+    if password and len(password.strip()) > 0:
+        if len(password) < 8:
+            response = RedirectResponse(
+                url=request.url_for("get_user_edit_view", user_id=user_id),
+                status_code=303,
+            )
+            response.set_cookie(
+                key="flash_message",
+                value="La contraseña debe tener al menos 8 caracteres.",
+                httponly=True,
+            )
+            response.set_cookie(key="flash_type", value="red", httponly=True)
+            return response
+        user_to_update.password_hash = hash_password(password)
+
+    db.commit()
+
+    response = RedirectResponse(url=request.url_for("get_users"), status_code=303)
+    response.set_cookie(
+        key="flash_message",
+        value=f"Usuario '{user_to_update.username}' actualizado con éxito.",
+        httponly=True,
+    )
+    response.set_cookie(key="flash_type", value="green", httponly=True)
+
+    return response
 
 
 # ----------------------------------------------------------------------

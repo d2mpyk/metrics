@@ -15,6 +15,9 @@
     <button class="w3-bar-item w3-button w3-round w3-white time-range-btn" onclick="changeTimeRange('day', this)">Día</button>
     <button class="w3-bar-item w3-button w3-round w3-white time-range-btn" onclick="changeTimeRange('week', this)">Semana</button>
     <button class="w3-bar-item w3-button w3-round w3-white time-range-btn" onclick="changeTimeRange('month', this)">Mes</button>
+    <a href="{{ url_for('get_all_clients') }}" class="w3-bar-item w3-button w3-round w3-red w3-right w3-hover-white w3-hover-text-red">
+        <i class="fa fa-arrow-left"></i> Regresar
+    </a>
 </div>
 
 <div class="w3-row-padding w3-margin-bottom">

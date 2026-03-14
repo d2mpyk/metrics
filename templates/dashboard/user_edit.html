@@ -1,0 +1,51 @@
+{% extends "dashboard/base_dashboard.html" %}
+
+{% block content %}
+<div class="w3-container w3-margin-top">
+    <div class="w3-card-4 w3-white w3-round-large" style="max-width: 600px; margin: auto;">
+        <header class="w3-container w3-blue w3-round-top-large">
+            <h4><i class="fa fa-user-circle"></i> Editar Usuario: {{ target_user.username }}</h4>
+        </header>
+
+        <form class="w3-container w3-padding-24" action="{{ url_for('post_user_edit_view', user_id=target_user.id) }}"
+            method="post">
+            <div class="w3-section">
+                <label><b>Nombre de Usuario</b></label>
+                <input class="w3-input w3-border w3-round" type="text" name="username"
+                    value="{{ target_user.username }}" {{ 'required' if user.role=='admin' else 'readonly' }}>
+            </div>
+
+            <div class="w3-section">
+                <label><b>Nueva Contraseña</b> (dejar en blanco para no cambiar)</label>
+                <input class="w3-input w3-border w3-round" type="password" name="password" placeholder="********"
+                    minlength="8">
+            </div>
+
+            {% if user.role == 'admin' %}
+            <div class="w3-section">
+                <label><b>Rol de Sistema</b></label>
+                <select class="w3-select w3-border w3-round" name="role">
+                    <option value="user" {{ 'selected' if target_user.role=='user' }}>Usuario Estándar</option>
+                    <option value="admin" {{ 'selected' if target_user.role=='admin' }}>Administrador</option>
+                </select>
+            </div>
+
+            <div class="w3-section">
+                <input class="w3-check" type="checkbox" name="is_active" {{ 'checked' if target_user.is_active }}>
+                <label> Usuario Activo (Permitir Login)</label>
+            </div>
+            {% endif %}
+
+            <div class="w3-padding-16">
+                <button type="submit" class="w3-button w3-blue w3-round w3-block w3-hover-white w3-hover-text-blue">
+                    <i class="fa fa-save"></i> Guardar Cambios
+                </button>
+                <a href="{{ url_for('get_users') }}"
+                    class="w3-button w3-red w3-round w3-block w3-margin-top w3-hover-white w3-hover-text-red">
+                    Cancelar
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

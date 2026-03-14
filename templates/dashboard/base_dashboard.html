@@ -24,7 +24,13 @@
   <nav class="w3-sidebar w3-collapse w3-white w3-animate-left" style="z-index:3;width:300px;" id="mySidebar"><br>
     <div class="w3-container w3-row">
       <div class="w3-col s4">
-        <img src="{{ user.image_path }}" class="w3-circle w3-margin-right" style="width:46px">
+        {% if user.image_file %}
+        <img src="{{ url_for('media', path='profile_pics/' + user.image_file) }}" class="w3-circle w3-margin-right"
+          style="width:46px">
+        {% else %}
+        <img src="{{ url_for('static', path='profile_pics/default.jpg') }}" class="w3-circle w3-margin-right"
+          style="width:46px">
+        {% endif %}
       </div>
       <div class="w3-col s8 w3-bar">
         <span>Hola <strong>{{ user.username }}</strong></span><br>
@@ -64,7 +70,9 @@
   <div class="w3-main" style="margin-left:300px;margin-top:43px;">
     <!-- Flash Message -->
     {% if flash_message %}
-    <div class="w3-panel w3-pale-red w3-right w3-display-container w3-round w3-animate-opacity">
+    <div
+      class="w3-panel {{ 'w3-pale-green' if flash_type == 'green' else 'w3-pale-red' }} w3-right w3-display-container w3-round w3-animate-opacity"
+      style="margin: 10px;">
       <span onclick="this.parentElement.style.display='none'"
         class="w3-button w3-large w3-display-topright">&times;</span>
       <p>{{ flash_message }}</p>
@@ -120,10 +128,10 @@
         <div class="w3-container w3-round-large w3-red w3-padding-16">
           <div class="w3-left"><i class="fa fa-share-alt w3-xxxlarge"></i></div>
           <div class="w3-button w3-round-large w3-hover-white w3-hover-text-red w3-right">
-            <h3>23</h3>
+            <h3>{{ data.total_errors }}</h3>
           </div>
           <div class="w3-clear">
-            <h4>Shares</h4>
+            <h4>Errors</h4>
           </div>
         </div>
       </div>

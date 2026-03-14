@@ -350,6 +350,12 @@ def device_activate_submit(
     code_record.is_verified = True
     code_record.client_id = new_client.id
 
+    # Actualizar el registro de ApprovedClient ya que el cliente ha sido activado
+    if approved_client:
+        approved_client.is_active = True
+
+    db.commit()
+
     # Redirección exitosa al Dashboard
     response = RedirectResponse(
         url=request.url_for("dashboard"), status_code=status.HTTP_303_SEE_OTHER
@@ -359,8 +365,4 @@ def device_activate_submit(
     )
     response.set_cookie(key="flash_type", value="green", httponly=True)
 
-    # Eliminar el registro de ApprovedClient ya que el cliente ha sido activado
-    if approved_client:
-        db.delete(approved_client)
-    db.commit()
     return response

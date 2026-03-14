@@ -180,7 +180,11 @@ def get_approved_clients(
     current_admin = admin_or_redirect
 
     approved_clients = (
-        db.execute(select(ApprovedClient).order_by(desc(ApprovedClient.id)))
+        db.execute(
+            select(ApprovedClient)
+            .where(ApprovedClient.is_active == False)
+            .order_by(desc(ApprovedClient.id))
+        )
         .scalars()
         .all()
     )
@@ -272,6 +276,7 @@ def create_approved_client(
     new_client = ApprovedClient(
         ip_address=ip_address,
         description=description,
+        is_active=False,
     )
 
     db.add(new_client)
@@ -434,7 +439,9 @@ def get_client_metrics_json(
             start_date = now - timedelta(days=1)
 
         # Traer todas las métricas del rango en orden ascendente
-        query = query.where(ServerMetric.timestamp >= start_date).order_by(ServerMetric.timestamp.asc())
+        query = query.where(ServerMetric.timestamp >= start_date).order_by(
+            ServerMetric.timestamp.asc()
+        )
         metrics = db.execute(query).scalars().all()
     elif last_timestamp:
         # Si hay timestamp, traemos solo las nuevas (orden ascendente para el gráfico)
