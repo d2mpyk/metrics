@@ -34,7 +34,10 @@ from utils.auth import (
     verify_reset_password_token,
     send_reset_password_email,
     get_current_admin,
+    security_logger,
+    get_flash_messages,
 )
+from utils.limiter import limiter
 from utils.config import get_settings
 from utils.database import get_db
 from schemas.user import (
@@ -171,8 +174,9 @@ def update_current_user_password(
 # ----------------------------------------------------------------------
 # Solicita reseteo de contraseña (Forgot Password)
 @router.post(
-    "/forgot-password", status_code=status.HTTP_200_OK, name="request_password_reset"
+    "/forgot-password", status_code=status.HTTP_200_OK, name="request_password_reset",
 )
+@limiter.limit("3/hour")
 def request_password_reset(
     request: Request,
     request_data: PasswordResetRequest,
@@ -211,8 +215,7 @@ def request_password_reset(
 )
 def reset_password_view(request: Request, token: str):
     """Muestra el formulario para restablecer la contraseña."""
-    flash_message = request.cookies.get("flash_message")
-    flash_type = request.cookies.get("flash_type")
+    flash_message, flash_type = get_flash_messages(request)
 
     response = templates.TemplateResponse(
         request=request,
@@ -230,6 +233,7 @@ def reset_password_view(request: Request, token: str):
 
 
 # Ejecuta el reseteo de contraseña
+@limiter.limit("5/minute")
 @router.post(
     "/reset-password/{token}",
     response_class=RedirectResponse,
@@ -261,6 +265,7 @@ def reset_password(
 
     email = verify_reset_password_token(token)
     if not email:
+        # El logging del token inválido ya se hace dentro de verify_reset_password_token
         # Redirigir al login si el token es inválido para no dejar al usuario en una página rota
         response = RedirectResponse(
             url=request.url_for("login"), status_code=status.HTTP_303_SEE_OTHER
@@ -313,8 +318,7 @@ def get_users(
     result = db.execute(select(User))
     users = result.scalars().all()
 
-    flash_message = request.cookies.get("flash_message")
-    flash_type = request.cookies.get("flash_type")
+    flash_message, flash_type = get_flash_messages(request)
 
     response = templates.TemplateResponse(
         request=request,
@@ -353,8 +357,7 @@ def get_user_edit_view(
     if not target_user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
 
-    flash_message = request.cookies.get("flash_message")
-    flash_type = request.cookies.get("flash_type")
+    flash_message, flash_type = get_flash_messages(request)
 
     response = templates.TemplateResponse(
         "dashboard/user_edit.html",
@@ -395,6 +398,9 @@ async def post_user_edit_view(
     # Seguridad: Solo admin o el propio usuario
     is_admin = requester_or_redirect.role == "admin"
     if not is_admin and requester_or_redirect.id != user_id:
+        security_logger.warning(
+            f"Usuario '{requester_or_redirect.username}' (ID: {requester_or_redirect.id}) intentó editar sin permiso al usuario con ID: {user_id} desde IP {request.client.host}"
+        )
         raise HTTPException(
             status_code=403, detail="No tienes permiso para editar este perfil."
         )
@@ -415,6 +421,9 @@ async def post_user_edit_view(
 
         # Evitar auto-desactivación del admin
         if user_to_update.id == requester_or_redirect.id and not new_active_status:
+            security_logger.warning(
+                f"Admin '{requester_or_redirect.username}' intentó auto-desactivarse desde IP {request.client.host}"
+            )
             response = RedirectResponse(
                 url=request.url_for("get_user_edit_view", user_id=user_id),
                 status_code=status.HTTP_303_SEE_OTHER,
@@ -533,48 +542,62 @@ def create_approved_user(
 
 # ----------------------------------------------------------------------
 # Crea un usuario
+@limiter.limit("10/hour")
 @router.post(
     "/create",
-    response_model=UserResponsePrivate,
-    status_code=status.HTTP_201_CREATED,
+    response_class=RedirectResponse,
+    status_code=status.HTTP_303_SEE_OTHER,
+    name="create_user",
 )
 def create_user(
     request: Request,
-    user: UserCreate,
     db: Annotated[Session, Depends(get_db)],
     admin_or_redirect: Annotated[User | RedirectResponse, Depends(get_current_admin)],
     background_tasks: BackgroundTasks,
+    username: Annotated[str, Form()],
+    email: Annotated[str, Form()],
+    password: Annotated[str, Form()],
 ):
     if isinstance(admin_or_redirect, RedirectResponse):
         return admin_or_redirect
 
-    # Validaciones
-    check_username_exists(db, user.username)
-    check_email_exists(db, user.email)
-    result = db.execute(
-        select(ApprovedUsers).where(
-            func.lower(ApprovedUsers.email) == user.email.lower()
+    def redirect_error(msg: str):
+        response = RedirectResponse(
+            url=request.url_for("get_users"), status_code=303
         )
-    )
-    is_approved = result.scalars().first()
+        response.set_cookie(key="flash_message", value=msg, httponly=True)
+        response.set_cookie(key="flash_type", value="red", httponly=True)
+        return response
 
-    # Aceptar solo usuarios que coincidan con la DB approved
-    if is_approved is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Este usuario no está aprobado.",
+    # 1. Validaciones
+    try:
+        check_username_exists(db, username)
+        check_email_exists(db, email)
+    except HTTPException as e:
+        return redirect_error(e.detail)
+
+    # 2. Aprobar el email si no lo está ya
+    is_already_approved = (
+        db.execute(
+            select(ApprovedUsers).where(func.lower(ApprovedUsers.email) == email.lower())
         )
+        .scalars()
+        .first()
+    )
+    if not is_already_approved:
+        new_approved = ApprovedUsers(email=email.lower())
+        db.add(new_approved)
 
     new_user = User(
-        username=user.username,
-        email=user.email.lower(),
-        password_hash=hash_password(user.password),
+        username=username,
+        email=email.lower(),
+        password_hash=hash_password(password),
         role="user",
         is_active=False,
     )
 
     db.add(new_user)
-    db.commit()
+    db.commit()  # Guarda tanto la aprobación (si es nueva) como el usuario
     db.refresh(new_user)
 
     # --- Logica de confirmación de Email ---
@@ -582,11 +605,18 @@ def create_user(
     token = generate_verification_token(new_user.email)
     # 2. Crear link
     verify_url = str(request.url_for("verify_email", token=token))
-    context = {"user": user.username, "email": user.email, "url": verify_url}
+    context = {"user": username, "email": email, "url": verify_url}
     # 3. Enviar email en segundo plano sin bloquear el return
     background_tasks.add_task(send_email_confirmation, context)
 
-    return new_user
+    response = RedirectResponse(url=request.url_for("get_users"), status_code=303)
+    response.set_cookie(
+        key="flash_message",
+        value=f"Usuario '{username}' creado. Se ha enviado un email de confirmación.",
+        httponly=True,
+    )
+    response.set_cookie(key="flash_type", value="green", httponly=True)
+    return response
 
 
 # ----------------------------------------------------------------------
@@ -596,6 +626,7 @@ def verify_user_email(token: str, db: Annotated[Session, Depends(get_db)]):
     email = confirm_verification_token(token)
 
     if not email:
+        # El logging ya se hace dentro de confirm_verification_token
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="El link de verificación es inválido o ha expirado.",
@@ -606,6 +637,9 @@ def verify_user_email(token: str, db: Annotated[Session, Depends(get_db)]):
     user = result.scalars().first()
 
     if not user:
+        security_logger.error(
+            f"Verificación de email fallida: usuario no encontrado para email '{email}' aunque el token era válido."
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Usuario no encontrado",
@@ -655,6 +689,7 @@ def get_user(
 )
 def update_user_role(
     user_id: int,
+    request: Request,
     role_data: UserRoleUpdate,
     db: Annotated[Session, Depends(get_db)],
     admin_or_redirect: Annotated[User | RedirectResponse, Depends(get_current_admin)],
@@ -664,6 +699,9 @@ def update_user_role(
     current_admin = admin_or_redirect
 
     if user_id == current_admin.id:
+        security_logger.warning(
+            f"Admin '{current_admin.username}' intentó cambiar su propio rol desde IP {request.client.host}."
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Un administrador no puede cambiar su propio rol.",
@@ -734,6 +772,7 @@ def update_user_partial(
 # Elimina un usuario
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["Users"])
 def delete_user(
+    request: Request,
     user_id: int,
     db: Annotated[Session, Depends(get_db)],
     admin_or_redirect: Annotated[User | RedirectResponse, Depends(get_current_admin)],
@@ -753,6 +792,9 @@ def delete_user(
 
     # No se puede eliminar el usuario principal
     if user_id == current_admin.id:
+        security_logger.warning(
+            f"Admin '{current_admin.username}' (ID: {current_admin.id}) intentó auto-eliminarse desde IP {request.client.host}."
+        )
         raise HTTPException(
             status_code=status.HTTP_406_NOT_ACCEPTABLE,
             detail="Este usuario no puede eliminarse a si mismo.",

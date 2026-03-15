@@ -3,10 +3,14 @@
 from fastapi import FastAPI, Request, status
 
 # Para enviar respuestas HTML
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import sys
+
+# Importa la instancia del limiter API
+from slowapi.errors import RateLimitExceeded
+from utils.limiter import limiter
 
 # Imports Locales
 from utils.database import Base, engine
@@ -30,6 +34,7 @@ app = FastAPI(
     version="1.0.0",
     root_path="/metrics", # Agregación para Apache
 )
+
 # Middleware
 app.add_middleware(HTMLAuthMiddleware)
 
@@ -40,6 +45,17 @@ app.mount("/media", StaticFiles(directory="media"), name="media")
 
 # Configurar motor de plantillas
 templates = Jinja2Templates(directory="templates")
+
+# Añadir el limiter al estado de la aplicación
+app.state.limiter = limiter
+
+# Añade un manejador de excepciones para RateLimitExceeded
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):
+    return JSONResponse(
+        status_code=429,
+        content={"detail": f"Límite de peticiones excedido: {exc.detail}"},
+    )
 
 # Enrutadores
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["Auth"])

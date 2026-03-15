@@ -13,6 +13,7 @@ click==8.3.1
 colorama==0.4.6
 coverage==7.13.4
 cryptography==46.0.5
+Deprecated==1.3.1
 dnspython==2.8.0
 email-validator==2.3.0
 fastapi==0.129.0
@@ -29,6 +30,7 @@ idna==3.11
 iniconfig==2.3.0
 itsdangerous==2.2.0
 Jinja2==3.1.6
+limits==5.8.0
 markdown-it-py==4.0.0
 MarkupSafe==3.0.3
 mdurl==0.1.2
@@ -58,6 +60,7 @@ rignore==0.7.6
 sentry-sdk==2.52.0
 shellingham==1.5.4
 six==1.17.0
+slowapi==0.1.9
 SQLAlchemy==2.0.46
 starlette==0.52.1
 typer==0.23.1
@@ -69,3 +72,4 @@ urllib3==2.6.3
 uvicorn==0.40.0
 watchfiles==1.1.1
 websockets==16.0
+wrapt==2.1.2

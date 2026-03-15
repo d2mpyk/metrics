@@ -37,4 +37,41 @@
         </table>
     </div>
 </div>
+
+{% if user.role == 'admin' %}
+<!-- Botón Flotante para agregar -->
+<button
+    class="w3-button w3-xlarge w3-circle w3-blue w3-text-white w3-hover-white w3-hover-text-blue w3-card-4 w3-animate-zoom"
+    style="position:fixed;bottom:30px;right:30px;z-index:100;"
+    onclick="document.getElementById('modalAddUser').style.display='block'" title="Agregar Usuario">
+    <i class="fa fa-plus"></i>
+</button>
+
+<!-- Modal para Agregar Usuario -->
+<div id="modalAddUser" class="w3-modal">
+    <div class="w3-modal-content w3-card-4 w3-animate-zoom w3-round-large" style="max-width:500px">
+        <header class="w3-container w3-blue w3-text-white w3-round-top-large">
+            <span onclick="document.getElementById('modalAddUser').style.display='none'"
+                class="w3-button w3-red w3-hover-white w3-hover-text-red w3-display-topright"><strong>&times;</strong></span>
+            <h3>Agregar Usuario</h3>
+        </header>
+        <form id="addUserForm" class="w3-container w3-padding-16" method="POST" action="{{ url_for('create_user') }}">
+            <label>Nombre de Usuario</label>
+            <input class="w3-input w3-border w3-round w3-margin-bottom" type="text" id="new_username" name="username"
+                required>
+            <label>Email</label>
+            <input class="w3-input w3-border w3-round w3-margin-bottom" type="email" id="new_email" name="email"
+                required>
+            <label>Contraseña</label>
+            <input class="w3-input w3-border w3-round w3-margin-bottom" type="password" id="new_password"
+                name="password" required minlength="8">
+            <button
+                class="w3-button w3-block w3-blue w3-text-white w3-hover-white w3-hover-text-blue w3-round w3-section"
+                type="submit">Crear Usuario</button>
+        </form>
+    </div>
+</div>
+{% endif %}
 {% endblock %}
+
+{% block scripts %}{% endblock %}

@@ -44,8 +44,62 @@
         </tr>
       </table>
     </div>
+    <div class="w3-twothird">
+      <h5>Seguridad: Intentos de Acceso</h5>
+      <div class="w3-card w3-white w3-padding">
+        <!-- Canvas para Chart.js -->
+        <canvas id="loginChart" style="width:100%;max-height:300px"></canvas>
+      </div>
+    </div>
   </div>
 </div>
 <hr>
 
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+  async function loadLoginStats() {
+    try {
+      const response = await fetch('/api/v1/auth/stats/login');
+      if (!response.ok) return;
+      const data = await response.json();
+
+      const ctx = document.getElementById('loginChart').getContext('2d');
+      new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: ['Exitosos', 'Fallidos'],
+          datasets: [{
+            label: 'Eventos registrados',
+            data: [data.success, data.failed],
+            backgroundColor: [
+              'rgba(76, 175, 80, 0.6)', // Verde w3-green
+              'rgba(244, 67, 54, 0.6)'  // Rojo w3-red
+            ],
+            borderColor: [
+              'rgba(76, 175, 80, 1)',
+              'rgba(244, 67, 54, 1)'
+            ],
+            borderWidth: 1
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: { beginAtZero: true, ticks: { precision: 0 } }
+          },
+          plugins: { legend: { display: false } }
+        }
+      });
+    } catch (error) {
+      console.error('Error cargando estadísticas de login:', error);
+    }
+  }
+  
+  // Cargar gráfica al iniciar
+  loadLoginStats();
+</script>
 {% endblock %}

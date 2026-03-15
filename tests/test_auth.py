@@ -173,3 +173,29 @@ def test_device_activation_flow_redirects(client, admin_user, db_session):
     # 5. Verificar que el ApprovedClient fue marcado como activo
     db_session.refresh(approved_client_rec)
     assert approved_client_rec.is_active is True
+
+
+def test_login_rate_limit_exceeded(client, test_user):
+    """
+    Verifica que el endpoint de login devuelve 429 Too Many Requests
+    cuando se excede el límite (5/minuto).
+    """
+    # Intentamos loguearnos (fallido o exitoso cuenta igual) más veces de las permitidas.
+    # El límite configurado es 5/minuto.
+
+    # Nota: Como los tests comparten la instancia de la app/limiter y la IP (testclient),
+    # es posible que intentos previos en otros tests ya hayan consumido cuota.
+    # Por eso hacemos un bucle hasta encontrar el bloqueo.
+
+    limit_reached = False
+    for _ in range(10):
+        response = client.post(
+            "/api/v1/auth/token",
+            data={"username": test_user["email"], "password": "wrongpassword"},
+        )
+        if response.status_code == status.HTTP_429_TOO_MANY_REQUESTS:
+            limit_reached = True
+            assert "Límite de peticiones excedido" in response.json()["detail"]
+            break
+
+    assert limit_reached, "El rate limiting no se activó tras múltiples intentos."

@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+from urllib.parse import unquote
 from fastapi import Depends, Request, status, HTTPException
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import RedirectResponse
@@ -6,6 +7,7 @@ from typing import Annotated
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 import jwt, smtplib, logging
+from logging.handlers import RotatingFileHandler
 
 from pwdlib import PasswordHash
 from argon2.exceptions import VerifyMismatchError
@@ -17,7 +19,7 @@ from .database import get_db
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from models.users import User
-from models.clients import Client
+from models.clients import ApprovedClient, Client
 
 
 # Password Hasher
@@ -38,9 +40,30 @@ email_logger.setLevel(logging.INFO)
 
 # Evitar duplicar handlers si se recarga el módulo
 if not email_logger.handlers:
-    fh = logging.FileHandler("email_logs.log", encoding="utf-8")
+    fh = RotatingFileHandler(
+        "email_logs.log",
+        maxBytes=settings.LOG_MAX_BYTES,
+        backupCount=settings.LOG_BACKUP_COUNT,
+        encoding="utf-8",
+    )
     fh.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
     email_logger.addHandler(fh)
+
+# Configuración de Logging para Seguridad
+security_logger = logging.getLogger("security")
+security_logger.setLevel(logging.INFO)
+
+if not security_logger.handlers:
+    fh = RotatingFileHandler(
+        "security.log",
+        maxBytes=settings.LOG_MAX_BYTES,
+        backupCount=settings.LOG_BACKUP_COUNT,
+        encoding="utf-8",
+    )
+    fh.setFormatter(
+        logging.Formatter("%(asctime)s - %(levelname)s - %(name)s - %(message)s")
+    )
+    security_logger.addHandler(fh)
 
 
 # ----------------------------------------------------------------------
@@ -142,6 +165,9 @@ def get_current_user(
 
     if not token:
         # No hay token, no se puede continuar.
+        security_logger.info(
+            f"Acceso denegado (sin token) a {request.url.path} desde IP {request.client.host}. Redirigiendo a login."
+        )
         # Usamos request.url_for para construir la URL respetando el root_path
         login_url = request.url_for("login")
         return RedirectResponse(url=login_url, status_code=status.HTTP_303_SEE_OTHER)
@@ -167,6 +193,18 @@ def get_current_user(
 
     except jwt.ExpiredSignatureError:
         # Caso específico: el token ha expirado.
+        username = "desconocido"
+        try:
+            # Intentar decodificar sin verificar la expiración para obtener el 'sub'
+            payload = jwt.decode(
+                token, options={"verify_signature": False, "verify_exp": False}
+            )
+            username = payload.get("sub", "desconocido")
+        except Exception:
+            pass
+        security_logger.warning(
+            f"Token expirado para usuario '{username}' en {request.url.path} desde IP {request.client.host}. Redirigiendo."
+        )
         login_url = request.url_for("login")
         response = RedirectResponse(
             url=login_url, status_code=status.HTTP_303_SEE_OTHER
@@ -182,6 +220,9 @@ def get_current_user(
 
     except jwt.InvalidTokenError:
         # Caso genérico: token inválido, manipulado, o usuario no encontrado.
+        security_logger.warning(
+            f"Token inválido o manipulado en {request.url.path} desde IP {request.client.host}. Redirigiendo."
+        )
         login_url = request.url_for("login")
         response = RedirectResponse(
             url=login_url, status_code=status.HTTP_303_SEE_OTHER
@@ -203,12 +244,17 @@ CurrentUser = Annotated[User, Depends(get_current_user)]
 
 # ----------------------------------------------------------------------
 # Verifica si el usuario es admin
-def get_current_admin(current_user_or_redirect: CurrentUser) -> User | RedirectResponse:
+def get_current_admin(
+    request: Request, current_user_or_redirect: CurrentUser
+) -> User | RedirectResponse:
     """Verifica que el usuario actual tenga rol de administrador."""
     if isinstance(current_user_or_redirect, RedirectResponse):
         return current_user_or_redirect
 
     if current_user_or_redirect.role != "admin":
+        security_logger.warning(
+            f"Acceso de admin DENEGADO para usuario '{current_user_or_redirect.username}' a la ruta {request.url.path} desde IP {request.client.host}"
+        )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Acceso denegado",
@@ -239,6 +285,9 @@ def get_current_client(
     token = token_
 
     if not token:
+        security_logger.warning(
+            f"Acceso de dispositivo DENEGADO (sin token) a {request.url.path} desde IP {request.client.host}"
+        )
         raise response_exception
 
     # 2. Decodificar y validar rol
@@ -249,17 +298,47 @@ def get_current_client(
             algorithms=[settings.ALGORITHM.get_secret_value()],
             options={"require": ["sub", "exp", "iat", "role", "client_id"]},
         )
-    except jwt.InvalidTokenError:
+    except jwt.ExpiredSignatureError:
+        security_logger.warning(
+            f"Acceso de dispositivo DENEGADO (token expirado) a {request.url.path} desde IP {request.client.host}"
+        )
+        raise response_exception
+    except jwt.InvalidTokenError as e:
+        security_logger.warning(
+            f"Acceso de dispositivo DENEGADO (token inválido: {e}) a {request.url.path} desde IP {request.client.host}"
+        )
         raise response_exception
 
     if payload.get("role") != "device":
+        security_logger.warning(
+            f"Acceso de dispositivo DENEGADO (rol incorrecto: '{payload.get('role')}') a {request.url.path} desde IP {request.client.host}"
+        )
         raise response_exception
 
     client_id = payload.get("client_id")
     client = db.execute(select(Client).where(Client.id == client_id)).scalars().first()
 
     if not client or not client.is_active:
+        security_logger.error(
+            f"Acceso de dispositivo DENEGADO (cliente ID {client_id} inactivo o no encontrado) a {request.url.path} desde IP {request.client.host}"
+        )
         raise response_exception
+
+    # Si el cliente no tiene descripción, intentamos recuperarla de ApprovedClient
+    if not client.description:
+        approved_client = (
+            db.execute(
+                select(ApprovedClient).where(
+                    ApprovedClient.ip_address == client.ip_address
+                )
+            )
+            .scalars()
+            .first()
+        )
+        if approved_client and approved_client.description:
+            client.description = approved_client.description
+            db.commit()
+            db.refresh(client)
 
     return client
 
@@ -312,6 +391,9 @@ def confirm_verification_token(token: str, expiration=3600):
             max_age=expiration,  # Token expira en 1 hora
         )
     except Exception:
+        security_logger.warning(
+            f"Intento de confirmación de email con token inválido/expirado."
+        )
         return False
     return email
 
@@ -363,6 +445,21 @@ def send_email_confirmation(context: dict):
 
 
 # ----------------------------------------------------------------------
+# Obtener mensajes Flash decodificados
+def get_flash_messages(request: Request):
+    """Recupera y decodifica los mensajes flash de las cookies."""
+    flash_message = request.cookies.get("flash_message")
+    flash_type = request.cookies.get("flash_type")
+
+    if flash_message:
+        flash_message = unquote(flash_message).strip('"')
+    if flash_type:
+        flash_type = unquote(flash_type).strip('"')
+
+    return flash_message, flash_type
+
+
+# ----------------------------------------------------------------------
 # Genera token para resetear password
 def generate_reset_password_token(email: str):
     """Genera un token seguro para restablecer la contraseña"""
@@ -386,6 +483,9 @@ def verify_reset_password_token(token: str, expiration=3600):
             max_age=expiration,
         )
     except Exception:
+        security_logger.warning(
+            f"Intento de reseteo de contraseña con token inválido/expirado."
+        )
         return None
     return email
 

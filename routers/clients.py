@@ -16,6 +16,9 @@ from utils.auth import (
     create_access_token,
     get_current_admin,
     get_minutes_until_end_of_year,
+    get_flash_messages,
+    get_current_client,
+    security_logger,
 )
 from utils.config import get_settings
 from utils.crypto import decrypt_payload
@@ -33,57 +36,6 @@ templates = Jinja2Templates(directory="templates")
 
 settings = get_settings()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token")
-
-
-async def get_current_client(
-    token: Annotated[str, Depends(oauth2_scheme)],
-    db: Annotated[Session, Depends(get_db)],
-):
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    try:
-        payload = jwt.decode(
-            token,
-            settings.SECRET_KEY.get_secret_value(),
-            algorithms=[settings.ALGORITHM.get_secret_value()],
-        )
-
-        # Validar expiración manualmente comparando con fecha actual
-        exp = payload.get("exp")
-        if exp is None or datetime.now(UTC).timestamp() > exp:
-            raise credentials_exception
-
-        client_id: int = payload.get("client_id")
-        role: str = payload.get("role")
-        if client_id is None or role != "device":
-            raise credentials_exception
-    except (jwt.InvalidTokenError, AttributeError):
-        raise credentials_exception
-
-    client = db.execute(select(Client).where(Client.id == client_id)).scalars().first()
-    if client is None:
-        raise credentials_exception
-
-    # Si el cliente no tiene descripción, intentamos recuperarla de ApprovedClient
-    if not client.description:
-        approved_client = (
-            db.execute(
-                select(ApprovedClient).where(
-                    ApprovedClient.ip_address == client.ip_address
-                )
-            )
-            .scalars()
-            .first()
-        )
-        if approved_client and approved_client.description:
-            client.description = approved_client.description
-            db.commit()
-            db.refresh(client)
-
-    return client
 
 
 @router.get(
@@ -208,8 +160,7 @@ def get_approved_clients(
     data = get_dashboard_stats(db)
 
     # Recuperar mensajes flash de las cookies
-    flash_message = request.cookies.get("flash_message")
-    flash_type = request.cookies.get("flash_type")
+    flash_message, flash_type = get_flash_messages(request)
 
     response = templates.TemplateResponse(
         request=request,
@@ -487,6 +438,7 @@ def get_client_metrics_json(
 @router.post("/metrics", status_code=status.HTTP_201_CREATED)
 def receive_metrics(
     metrics_data: EncryptedMetrics,
+    request: Request,
     db: Annotated[Session, Depends(get_db)],
     current_client: Annotated[Client, Depends(get_current_client)],
 ):
@@ -497,7 +449,10 @@ def receive_metrics(
             metrics_data.ciphertext,
             current_client.client_secret_key,
         )
-    except Exception:
+    except Exception as e:
+        security_logger.error(
+            f"Error de desencriptación para cliente '{current_client.client_identifier}' (ID: {current_client.id}) desde IP {request.client.host}. Error: {e}"
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Error de desencriptación"
         )

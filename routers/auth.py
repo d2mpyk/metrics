@@ -1,4 +1,4 @@
-import secrets, uuid
+import secrets, uuid, os
 from datetime import datetime, timedelta, UTC
 from fastapi import APIRouter, Depends, HTTPException, Response, status, Request, Form
 from fastapi.responses import RedirectResponse, HTMLResponse
@@ -18,7 +18,10 @@ from utils.auth import (
     get_current_user,
     get_current_admin,
     get_minutes_until_end_of_year,
+    security_logger,
+    get_flash_messages,
 )
+from utils.limiter import limiter
 from utils.database import get_db
 from utils.config import get_settings
 
@@ -33,8 +36,7 @@ templates = Jinja2Templates(directory="templates")
 @router.get("/login", response_class=HTMLResponse, name="login")
 def login_view(request: Request):
     # Recuperar mensajes flash de las cookies
-    flash_message = request.cookies.get("flash_message")
-    flash_type = request.cookies.get("flash_type")
+    flash_message, flash_type = get_flash_messages(request)
 
     response = templates.TemplateResponse(
         request=request,
@@ -61,7 +63,9 @@ def login_view(request: Request):
     status_code=status.HTTP_200_OK,
     include_in_schema=False,
 )
+@limiter.limit("5/minute")
 def login_for_access_token(
+    request: Request,
     response: Response,
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
     db: Annotated[Session, Depends(get_db)],
@@ -71,6 +75,9 @@ def login_for_access_token(
 
     # Verifica si el user exists y el password es correcto
     if not user:
+        security_logger.warning(
+            f"Intento de login fallido para usuario '{form_data.username}' desde IP {request.client.host}"
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Usuario o Password incorrecto",
@@ -79,6 +86,9 @@ def login_for_access_token(
 
     # Verifica si el usuario está activo
     if not user.is_active:
+        security_logger.warning(
+            f"Intento de login para usuario inactivo '{form_data.username}' desde IP {request.client.host}"
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Error: Usuario inactivo, por favor confirme su correo.",
@@ -111,6 +121,11 @@ def login_for_access_token(
         samesite="lax",
     )
 
+    # Log de éxito para estadísticas
+    security_logger.info(
+        f"Login exitoso para usuario '{user.username}' desde IP {request.client.host}"
+    )
+
     return TokenResponse(access_token=access_token, token_type="bearer")
 
 
@@ -129,6 +144,7 @@ def logout(request: Request, response: Response):
 
 # ----------------------------------------------------------------------
 # Device Flow: 1. Solicitar Código (Device Authorization Request)
+@limiter.limit("10/hour")
 @router.post("/device/code", status_code=status.HTTP_200_OK)
 def device_authorization_request(
     request: Request,
@@ -143,6 +159,9 @@ def device_authorization_request(
     )
 
     if not approved:
+        security_logger.warning(
+            f"Intento de autorización de dispositivo desde IP no aprobada: {client_ip}"
+        )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Este servidor no está autorizado. IP detectada: {client_ip}",
@@ -178,13 +197,18 @@ def device_authorization_request(
 
 # ----------------------------------------------------------------------
 # Device Flow: 2. Polling de Token (Device Access Token Request)
+@limiter.limit("20/minute")
 @router.post("/device/token", status_code=status.HTTP_200_OK)
 def device_access_token(
+    request: Request,
     device_code: Annotated[str, Form()],
     grant_type: Annotated[str, Form()],
     db: Annotated[Session, Depends(get_db)],
 ):
     if grant_type != "urn:ietf:params:oauth:grant-type:device_code":
+        security_logger.warning(
+            f"Solicitud de token de dispositivo con grant_type no soportado: '{grant_type}'"
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="unsupported_grant_type",
@@ -198,12 +222,18 @@ def device_access_token(
     )
 
     if not code_record:
+        security_logger.warning(
+            f"Solicitud de token de dispositivo con device_code inválido."
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="invalid_grant",
         )
 
     if datetime.now(UTC) > code_record.expires_at.replace(tzinfo=UTC):
+        security_logger.warning(
+            f"Solicitud de token de dispositivo con device_code expirado para IP {code_record.ip_address}."
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="expired_token",
@@ -261,8 +291,7 @@ def device_access_token(
 )
 def device_activate_view(request: Request):
     # Recuperar mensajes flash de las cookies
-    flash_message = request.cookies.get("flash_message")
-    flash_type = request.cookies.get("flash_type")
+    flash_message, flash_type = get_flash_messages(request)
 
     response = templates.TemplateResponse(
         request=request,
@@ -283,6 +312,7 @@ def device_activate_view(request: Request):
 
 # ----------------------------------------------------------------------
 # Device Flow: 4. Procesar Activación (Admin Only)
+@limiter.limit("5/minute")
 @router.post(
     "/device/activate",
     status_code=status.HTTP_303_SEE_OTHER,
@@ -299,6 +329,9 @@ def device_activate_submit(
 
     # Helper para redirección con error
     def redirect_error(msg):
+        security_logger.warning(
+            f"Activación de dispositivo fallida por admin '{current_admin.username}': {msg}"
+        )
         resp = RedirectResponse(
             url=request.url_for("device_activate_view"),
             status_code=status.HTTP_303_SEE_OTHER,
@@ -366,3 +399,33 @@ def device_activate_submit(
     response.set_cookie(key="flash_type", value="green", httponly=True)
 
     return response
+
+
+# ----------------------------------------------------------------------
+# Estadísticas de Login (Basado en Logs)
+@router.get("/stats/login", status_code=status.HTTP_200_OK)
+def get_login_stats(
+    request: Request,
+    admin: Annotated[User, Depends(get_current_admin)],
+):
+    """Analiza security.log para contar logins exitosos vs fallidos."""
+    log_file = "security.log"
+    stats = {"success": 0, "failed": 0}
+
+    if not os.path.exists(log_file):
+        return stats
+
+    try:
+        with open(log_file, "r", encoding="utf-8") as f:
+            for line in f:
+                if "Login exitoso" in line:
+                    stats["success"] += 1
+                elif (
+                    "Intento de login fallido" in line
+                    or "Intento de login para usuario inactivo" in line
+                ):
+                    stats["failed"] += 1
+    except Exception:
+        pass
+
+    return stats
