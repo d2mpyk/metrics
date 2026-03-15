@@ -3,6 +3,7 @@ from sqlalchemy import select
 from models.users import User
 from unittest.mock import patch
 from utils.auth import generate_reset_password_token
+from urllib.parse import unquote
 
 # -----------------------------------------------------------------------------
 # TESTS DE LECTURA (GET)
@@ -415,7 +416,7 @@ def test_forgot_password_non_existent_user(mock_send_email, client):
     mock_send_email.assert_not_called()
 
 
-def test_reset_password_with_valid_token(client, test_user):
+def test_reset_password_with_valid_token(client, test_user, auth_client):
     """
     Verifica el flujo completo: generar token, resetear contraseña y
     verificar que la nueva contraseña funciona.
@@ -426,17 +427,64 @@ def test_reset_password_with_valid_token(client, test_user):
 
     # 2. Usar el token para resetear la contraseña
     response = client.post(
-        f"/api/v1/users/reset-password/{token}", json={"new_password": new_password}
+        f"/api/v1/users/reset-password/{token}",
+        data={"new_password": new_password, "confirm_password": new_password},
+        follow_redirects=False,
     )
-    assert response.status_code == status.HTTP_200_OK
-    assert response.json()["message"] == "Contraseña actualizada exitosamente."
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    assert response.headers["location"].endswith("/api/v1/auth/login")
+    assert "flash_message" in response.cookies
+    # Limpiamos comillas y usamos texto ASCII para evitar conflictos de encoding
+    unquoted_message = unquote(response.cookies["flash_message"].strip('"'))
+    assert "actualizada exitosamente" in unquoted_message
+
+    # 3. Intentar login con la contraseña antigua (debe fallar)
+    old_login_response = client.post(
+        "/api/v1/auth/token",
+        data={"username": test_user["email"], "password": test_user["password"]},
+    )
+    assert old_login_response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    # 4. Intentar login con la contraseña nueva (debe funcionar)
+    new_login_response = client.post(
+        "/api/v1/auth/token",
+        data={"username": test_user["email"], "password": new_password},
+    )
+    assert new_login_response.status_code == status.HTTP_200_OK
 
 
 def test_reset_password_with_invalid_token(client):
     """Verifica que un token inválido o manipulado sea rechazado."""
     response = client.post(
         "/api/v1/users/reset-password/this_is_not_a_valid_token",
-        json={"new_password": "any_password"},
+        data={"new_password": "any_password", "confirm_password": "any_password"},
+        follow_redirects=False,
     )
-    assert response.status_code == status.HTTP_400_BAD_REQUEST
-    assert "inválido o ha expirado" in response.json()["detail"]
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    assert response.headers["location"].endswith("/api/v1/auth/login")
+    assert "flash_message" in response.cookies
+    # Limpiamos comillas y usamos texto ASCII
+    unquoted_message = unquote(response.cookies["flash_message"].strip('"'))
+    assert "o ha expirado" in unquoted_message
+
+
+def test_admin_cannot_deactivate_self_via_edit_form(admin_client, admin_user):
+    """
+    Verifica que un administrador no pueda desmarcar 'is_active'
+    en su propio formulario de edición.
+    """
+    # Enviamos datos sin 'is_active' (simulando checkbox desmarcado)
+    payload = {
+        "username": admin_user["username"],
+        # is_active omitido -> False
+    }
+
+    response = admin_client.post(
+        f"/api/v1/users/{admin_user['id']}/edit",
+        data=payload,
+        follow_redirects=False,
+    )
+
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    assert "flash_message" in response.cookies
+    assert "No puedes desactivar tu propia cuenta" in response.cookies["flash_message"]

@@ -5,6 +5,35 @@ from models.users import User
 from models.clients import Client, ApprovedClient, ServerMetric
 
 
+def calculate_network_speed(
+    last_metric: ServerMetric | None,
+    new_net_sent: int | None,
+    new_net_recv: int | None,
+    current_timestamp: datetime,
+) -> tuple[float, float]:
+    """Calcula la velocidad de red basada en el delta con la métrica anterior."""
+    speed_sent_bps = 0.0
+    speed_recv_bps = 0.0
+
+    if last_metric and new_net_sent is not None and new_net_recv is not None:
+        last_ts = last_metric.timestamp
+        # Asegurar que last_ts tenga timezone para evitar error de sustracción
+        if last_ts.tzinfo is None:
+            last_ts = last_ts.replace(tzinfo=UTC)
+
+        time_delta = (current_timestamp - last_ts).total_seconds()
+
+        if time_delta > 0:
+            # Manejar reinicio de contadores (si el nuevo valor es menor)
+            if new_net_sent >= last_metric.net_sent:
+                speed_sent_bps = (new_net_sent - last_metric.net_sent) / time_delta
+
+            if new_net_recv >= last_metric.net_recv:
+                speed_recv_bps = (new_net_recv - last_metric.net_recv) / time_delta
+
+    return speed_sent_bps, speed_recv_bps
+
+
 class DashboardStatsCache:
     def __init__(self, ttl_seconds: int = 120):
         self.ttl = ttl_seconds

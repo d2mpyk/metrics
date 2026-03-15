@@ -3,6 +3,7 @@ from fastapi.responses import RedirectResponse
 from fastapi import Request
 from .auth import verify_access_token  # tu función JWT
 
+
 class HTMLAuthMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
@@ -10,11 +11,7 @@ class HTMLAuthMiddleware(BaseHTTPMiddleware):
         path = request.url.path
 
         # 🔓 Rutas públicas permitidas
-        public_paths = [
-            "/",
-            "/api/v1/auth/token",
-            "/api/v1/users/verify"
-        ]
+        public_paths = ["/", "/api/v1/auth/token", "/api/v1/users/verify"]
 
         # Permitir rutas públicas
         if path in public_paths:
@@ -30,11 +27,11 @@ class HTMLAuthMiddleware(BaseHTTPMiddleware):
             token = request.cookies.get("access_token")
 
             if not token:
-                return RedirectResponse(url="/")
+                return RedirectResponse(url=request.url_for("login"))
 
             try:
                 verify_access_token(token)
             except Exception:
-                return RedirectResponse(url="/")
+                return RedirectResponse(url=request.url_for("login"))
 
         return await call_next(request)

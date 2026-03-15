@@ -4,12 +4,14 @@
 <form id="loginForm">
     <p>
         <!-- <label class="w3-text-grey">Correo electrónico</label> -->
-        <input id="email" class="w3-input w3-border w3-round" type="email" name="username" placeholder="Username" required>
+        <input id="email" class="w3-input w3-border w3-round" type="email" name="username" placeholder="Username"
+            required>
     </p>
 
     <p>
         <!-- <label class="w3-text-grey">Contraseña</label> -->
-        <input id="password" class="w3-input w3-border w3-round" type="password" name="password" placeholder="Password" required>
+        <input id="password" class="w3-input w3-border w3-round" type="password" name="password" placeholder="Password"
+            required>
     </p>
 
     <p>
@@ -20,6 +22,6 @@
 </form>
 
 <div class="w3-center w3-small w3-margin-top">
-    <a href="/api/v1/auth/forgot-password" class="w3-text-blue">¿Olvidaste tu contraseña?</a>
+    <a href="{{ url_for('forgot-password') }}" class="w3-text-blue">¿Olvidaste tu contraseña?</a>
 </div>
 {% endblock %}

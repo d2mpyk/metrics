@@ -20,7 +20,7 @@ from utils.auth import (
 from utils.config import get_settings
 from utils.crypto import decrypt_payload
 from utils.database import get_db
-from utils.stats import get_dashboard_stats
+from utils.stats import get_dashboard_stats, calculate_network_speed
 from schemas.client import (
     PaginatedClientResponse,
     ApprovedClientCreate,
@@ -91,6 +91,7 @@ async def get_current_client(
     response_class=HTMLResponse,
     status_code=status.HTTP_200_OK,
     include_in_schema=False,
+    name="get_all_clients",
 )
 def get_all_clients(
     request: Request,
@@ -516,25 +517,12 @@ def receive_metrics(
     # 2. Obtener valores acumulativos del payload
     new_net_sent = decrypted_data.get("net_sent")
     new_net_recv = decrypted_data.get("net_recv")
-    speed_sent_bps = 0.0
-    speed_recv_bps = 0.0
     current_timestamp = datetime.now(UTC)
 
-    # 3. Calcular velocidad si existe una métrica anterior
-    if last_metric and new_net_sent is not None and new_net_recv is not None:
-        last_ts = last_metric.timestamp
-        # Asegurar que last_ts tenga timezone para evitar error de sustracción
-        if last_ts.tzinfo is None:
-            last_ts = last_ts.replace(tzinfo=UTC)
-        time_delta = (current_timestamp - last_ts).total_seconds()
-
-        if time_delta > 0:
-            # Manejar reinicio de contadores (si el nuevo valor es menor)
-            if new_net_sent >= last_metric.net_sent:
-                speed_sent_bps = (new_net_sent - last_metric.net_sent) / time_delta
-
-            if new_net_recv >= last_metric.net_recv:
-                speed_recv_bps = (new_net_recv - last_metric.net_recv) / time_delta
+    # 3. Calcular velocidad
+    speed_sent_bps, speed_recv_bps = calculate_network_speed(
+        last_metric, new_net_sent, new_net_recv, current_timestamp
+    )
 
     new_metric = ServerMetric(
         client_id=current_client.id,

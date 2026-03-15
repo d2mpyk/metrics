@@ -121,8 +121,8 @@ def login_for_access_token(
     name="logout",
     include_in_schema=False,
 )
-def logout(response: Response):
-    redirect = RedirectResponse(url="/", status_code=303)
+def logout(request: Request, response: Response):
+    redirect = RedirectResponse(url=request.url_for("login"), status_code=303)
     redirect.delete_cookie("access_token")
     return redirect
 

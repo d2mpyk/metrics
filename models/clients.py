@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, UTC
-from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from utils.database import Base
@@ -67,6 +67,11 @@ class DeviceCode(Base):
 
 class ServerMetric(Base):
     __tablename__ = "server_metrics"
+
+    # Definición del índice compuesto para optimizar las búsquedas de series de tiempo
+    __table_args__ = (
+        Index("idx_client_time", "client_id", "timestamp"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), nullable=False)

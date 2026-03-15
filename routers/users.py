@@ -170,8 +170,11 @@ def update_current_user_password(
 
 # ----------------------------------------------------------------------
 # Solicita reseteo de contraseña (Forgot Password)
-@router.post("/forgot-password", status_code=status.HTTP_200_OK)
+@router.post(
+    "/forgot-password", status_code=status.HTTP_200_OK, name="request_password_reset"
+)
 def request_password_reset(
+    request: Request,
     request_data: PasswordResetRequest,
     background_tasks: BackgroundTasks,
     db: Annotated[Session, Depends(get_db)],
@@ -189,10 +192,8 @@ def request_password_reset(
         # 1. Generar Token
         token = generate_reset_password_token(user.email)
 
-        # 2. Crear Link (Ajustar según la ruta de tu Frontend o API)
-        DOMINIO = settings.DOMINIO.get_secret_value()
-        # Ejemplo: http://midominio.com/reset-password?token=...
-        reset_url = f"http://{DOMINIO}/api/v1/users/reset-password?token={token}"
+        # 2. Crear Link
+        reset_url = str(request.url_for("reset_password_view", token=token))
         context = {"username": user.username, "email": user.email, "url": reset_url}
 
         # 3. Enviar Email en background
@@ -204,30 +205,91 @@ def request_password_reset(
 
 
 # ----------------------------------------------------------------------
+# Vista de Reseteo de contraseña (GET)
+@router.get(
+    "/reset-password/{token}", response_class=HTMLResponse, name="reset_password_view"
+)
+def reset_password_view(request: Request, token: str):
+    """Muestra el formulario para restablecer la contraseña."""
+    flash_message = request.cookies.get("flash_message")
+    flash_type = request.cookies.get("flash_type")
+
+    response = templates.TemplateResponse(
+        request=request,
+        name="auth/reset-password.html",
+        context={
+            "token": token,
+            "flash_message": flash_message,
+            "flash_type": flash_type,
+        },
+    )
+    if flash_message:
+        response.delete_cookie("flash_message")
+        response.delete_cookie("flash_type")
+    return response
+
+
 # Ejecuta el reseteo de contraseña
-@router.post("/reset-password/{token}", status_code=status.HTTP_200_OK)
+@router.post(
+    "/reset-password/{token}",
+    response_class=RedirectResponse,
+    name="reset_password",
+)
 def reset_password(
+    request: Request,
     token: str,
-    password_data: PasswordResetConfirm,
     db: Annotated[Session, Depends(get_db)],
+    new_password: Annotated[str, Form()],
+    confirm_password: Annotated[str, Form()],
 ):
+    """Procesa el formulario de reseteo de contraseña."""
+
+    def redirect_error(msg: str):
+        response = RedirectResponse(
+            url=request.url_for("reset_password_view", token=token),
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+        response.set_cookie(key="flash_message", value=msg, httponly=True)
+        response.set_cookie(key="flash_type", value="red", httponly=True)
+        return response
+
+    if new_password != confirm_password:
+        return redirect_error("Las contraseñas no coinciden.")
+
+    if len(new_password) < 8:
+        return redirect_error("La contraseña debe tener al menos 8 caracteres.")
+
     email = verify_reset_password_token(token)
     if not email:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="El enlace es inválido o ha expirado.",
+        # Redirigir al login si el token es inválido para no dejar al usuario en una página rota
+        response = RedirectResponse(
+            url=request.url_for("login"), status_code=status.HTTP_303_SEE_OTHER
         )
+        response.set_cookie(
+            key="flash_message",
+            value="El enlace para restablecer la contraseña es inválido o ha expirado.",
+            httponly=True,
+        )
+        response.set_cookie(key="flash_type", value="red", httponly=True)
+        return response
 
     result = db.execute(select(User).where(func.lower(User.email) == email.lower()))
     user = result.scalars().first()
 
     if not user:
-        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        raise HTTPException(status_code=404, detail="Usuario no encontrado.")
 
-    user.password_hash = hash_password(password_data.new_password)
+    user.password_hash = hash_password(new_password)
     db.commit()
 
-    return {"message": "Contraseña actualizada exitosamente."}
+    response = RedirectResponse(url=request.url_for("login"), status_code=303)
+    response.set_cookie(
+        key="flash_message",
+        value="Contraseña actualizada exitosamente. Ya puedes iniciar sesión.",
+        httponly=True,
+    )
+    response.set_cookie(key="flash_type", value="green", httponly=True)
+    return response
 
 
 # ----------------------------------------------------------------------
@@ -237,6 +299,7 @@ def reset_password(
     response_class=HTMLResponse,
     status_code=status.HTTP_200_OK,
     include_in_schema=False,
+    name="get_users",
 )
 def get_users(
     request: Request,
@@ -346,7 +409,25 @@ async def post_user_edit_view(
             user_to_update.username = username
         if role:
             user_to_update.role = role
-        user_to_update.is_active = True if is_active == "on" else False
+
+        # Validar cambio de estado (is_active)
+        new_active_status = True if is_active == "on" else False
+
+        # Evitar auto-desactivación del admin
+        if user_to_update.id == requester_or_redirect.id and not new_active_status:
+            response = RedirectResponse(
+                url=request.url_for("get_user_edit_view", user_id=user_id),
+                status_code=status.HTTP_303_SEE_OTHER,
+            )
+            response.set_cookie(
+                key="flash_message",
+                value="No puedes desactivar tu propia cuenta.",
+                httponly=True,
+            )
+            response.set_cookie(key="flash_type", value="red", httponly=True)
+            return response
+
+        user_to_update.is_active = new_active_status
 
     if password and len(password.strip()) > 0:
         if len(password) < 8:
@@ -458,6 +539,7 @@ def create_approved_user(
     status_code=status.HTTP_201_CREATED,
 )
 def create_user(
+    request: Request,
     user: UserCreate,
     db: Annotated[Session, Depends(get_db)],
     admin_or_redirect: Annotated[User | RedirectResponse, Depends(get_current_admin)],
@@ -498,9 +580,8 @@ def create_user(
     # --- Logica de confirmación de Email ---
     # 1. Generar token
     token = generate_verification_token(new_user.email)
-    # 2. Crear link (ajustar dominio en .env)
-    DOMINIO = settings.DOMINIO.get_secret_value()
-    verify_url = f"http://{DOMINIO}/api/v1/users/verify/{token}"
+    # 2. Crear link
+    verify_url = str(request.url_for("verify_email", token=token))
     context = {"user": user.username, "email": user.email, "url": verify_url}
     # 3. Enviar email en segundo plano sin bloquear el return
     background_tasks.add_task(send_email_confirmation, context)
@@ -510,7 +591,7 @@ def create_user(
 
 # ----------------------------------------------------------------------
 # Verifica token de confirmación de email
-@router.get("/verify/{token}", status_code=status.HTTP_200_OK)
+@router.get("/verify/{token}", status_code=status.HTTP_200_OK, name="verify_email")
 def verify_user_email(token: str, db: Annotated[Session, Depends(get_db)]):
     email = confirm_verification_token(token)
 

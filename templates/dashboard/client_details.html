@@ -1,11 +1,9 @@
-{% extends "dashboard/base_dashboard.html" %}
+{% extends "dashboard/base.html" %}
 
 {% block title %}{{ title }}{% endblock %}
 
 {% block content %}
-<div class="w3-container w3-padding-32">
-    <h2 class="w3-xlarge w3-text-blue-grey"><b><i class="fa fa-desktop"></i> {{ client.description }}</b></h2>
-
+<div class="w3-container w3-padding-16">
     <div class="w3-card-4 w3-white w3-round-large">
         <div class="w3-container w3-padding-24">
             <div class="w3-row-padding">
@@ -43,16 +41,20 @@
                     <input class="w3-input w3-border w3-round w3-margin-bottom" type="text" name="description"
                         id="description" value="{{ client.description or '' }}"
                         placeholder="Ej: Servidor de Producción - Rack 2">
-
-                    <button type="submit" class="w3-button w3-blue w3-round w3-section w3-right w3-hover-white w3-hover-text-blue">
-                        <i class="fa fa-save"></i> Guardar Cambios
-                    </button>
-                    <button href="/api/v1/clients" class="w3-button w3-red w3-round w3-section w3-left w3-hover-white w3-hover-text-red">
-                        <i class="fa fa-server fa-fw"></i>  Regresar
-                    </button>
+                    <div class="w3-section">
+                        <a href="{{ url_for('get_all_clients') }}"
+                            class="w3-button w3-red w3-round w3-left w3-hover-white w3-hover-text-red">
+                            <i class="fa fa-arrow-left"></i> Regresar
+                        </a>
+                        <button type="submit"
+                            class="w3-button w3-blue w3-round w3-right w3-hover-white w3-hover-text-blue">
+                            <i class="fa fa-save"></i> Guardar Cambios
+                        </button>
+                    </div>
                 </form>
-                
+
             </div>
         </div>
     </div>
-    {% endblock %}
+</div>
+{% endblock %}
