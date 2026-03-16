@@ -40,7 +40,8 @@ document.addEventListener('DOMContentLoaded', function () {
             }
 
             try {
-                const response = await fetch('/api/v1/clients/approved', {
+                const BASE_PATH = document.body.getAttribute("data-root-path") || "";
+                const response = await fetch(`${BASE_PATH}/api/v1/clients/approved`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(data)

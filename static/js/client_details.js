@@ -104,7 +104,8 @@ function initClientMetrics(clientId, labels, cpuData, ramData, diskData, netSent
 async function fetchNewMetrics(clientId) {
     const statusLabel = document.getElementById('metricStatus');
     try {
-        let url = `/api/v1/clients/${clientId}/metrics/json`;
+        const BASE_PATH = document.body.getAttribute("data-root-path") || "";
+        let url = `${BASE_PATH}/api/v1/clients/${clientId}/metrics/json`;
 
         // Agregar parámetro de optimización si tenemos un timestamp previo
         if (lastUpdateTimestamp) {

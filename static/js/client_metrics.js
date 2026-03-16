@@ -75,7 +75,8 @@ function initializeMetricsCharts(clientId) {
     }
 
     async function fetchMetrics() {
-        let url = `/api/v1/clients/${clientId}/metrics/json`;
+        const BASE_PATH = document.body.getAttribute("data-root-path") || "";
+        let url = `${BASE_PATH}/api/v1/clients/${clientId}/metrics/json`;
 
         if (currentRange !== 'live') {
             url += `?time_range=${currentRange}`;
