@@ -7,6 +7,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import sys
+import os
 
 # Importa la instancia del limiter API
 from slowapi.errors import RateLimitExceeded
@@ -30,9 +31,11 @@ init_approved_client()
 # Instancia la aplicación de FastAPI
 app = FastAPI(
     title="FastAPI Template",
-    description="Este es una plantilla de app en FastAPI",
-    version="1.0.0",
-    root_path="/metrics", # Agregación para Apache
+    description="Esta es una app en FastAPI para Metricas de Servidores",
+    version="3.5.1",
+    # Code Quality: No hardcodear root_path. Leer de variable de entorno o dejar vacío.
+    # En producción (CentOS) se debe configurar Apache correctamente o pasar --root-path en uvicorn.
+    root_path=os.getenv("ROOT_PATH", "/metrics"),
 )
 
 # Middleware
@@ -56,6 +59,7 @@ async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):
         status_code=429,
         content={"detail": f"Límite de peticiones excedido: {exc.detail}"},
     )
+
 
 # Enrutadores
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["Auth"])
